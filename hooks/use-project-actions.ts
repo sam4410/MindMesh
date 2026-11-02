@@ -27,7 +27,7 @@ async function send(url: string, method: string, body?: object) {
 
 export function useProjectActions() {
   const router = useRouter();
-  const { projectId: activeProjectId } = useParams<{ projectId?: string }>();
+  const { roomId: activeProjectId } = useParams<{ roomId?: string }>();
   // Kept after close so dialog content doesn't vanish mid exit-animation.
   const [dialog, setDialog] = useState<DialogState | null>(null);
   const [isOpen, setIsOpen] = useState(false);

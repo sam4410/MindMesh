@@ -1,29 +1,12 @@
-import { auth } from "@clerk/nextjs/server";
-
+import { requireOwner } from "@/lib/project-access";
 import { readProjectInput } from "@/lib/project-input";
 import { prisma } from "@/lib/prisma";
 
 type Context = RouteContext<"/api/projects/[projectId]">;
 
-// Returns an error response unless the signed-in user owns the project.
-async function checkOwner(projectId: string) {
-  const { userId } = await auth();
-  if (!userId) return Response.json({ error: "Unauthorized" }, { status: 401 });
-
-  const project = await prisma.project.findUnique({
-    where: { id: projectId },
-    select: { ownerId: true },
-  });
-  if (!project) return Response.json({ error: "Project not found" }, { status: 404 });
-  if (project.ownerId !== userId) {
-    return Response.json({ error: "Only the project owner can do this" }, { status: 403 });
-  }
-  return null;
-}
-
 export async function PATCH(req: Request, ctx: Context) {
   const { projectId } = await ctx.params;
-  const denied = await checkOwner(projectId);
+  const denied = await requireOwner(projectId);
   if (denied) return denied;
 
   const input = await readProjectInput(req);
@@ -39,7 +22,7 @@ export async function PATCH(req: Request, ctx: Context) {
 
 export async function DELETE(_req: Request, ctx: Context) {
   const { projectId } = await ctx.params;
-  const denied = await checkOwner(projectId);
+  const denied = await requireOwner(projectId);
   if (denied) return denied;
 
   await prisma.project.delete({ where: { id: projectId } });

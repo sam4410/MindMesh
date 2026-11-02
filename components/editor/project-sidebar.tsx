@@ -1,5 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 import { Folder, FolderOpen, Pencil, Plus, Trash2, Users, X } from "lucide-react";
+import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -11,6 +12,7 @@ interface ProjectSidebarProps {
   onClose: () => void;
   ownedProjects: ProjectSummary[];
   sharedProjects: ProjectSummary[];
+  activeProjectId?: string;
   onCreate: () => void;
   onRename: (project: ProjectSummary) => void;
   onDelete: (project: ProjectSummary) => void;
@@ -21,6 +23,7 @@ export function ProjectSidebar({
   onClose,
   ownedProjects,
   sharedProjects,
+  activeProjectId,
   onCreate,
   onRename,
   onDelete,
@@ -58,7 +61,12 @@ export function ProjectSidebar({
           </TabsList>
           <TabsContent value="mine" className="min-h-0 overflow-y-auto">
             {ownedProjects.length > 0 ? (
-              <ProjectList projects={ownedProjects} onRename={onRename} onDelete={onDelete} />
+              <ProjectList
+                projects={ownedProjects}
+                activeProjectId={activeProjectId}
+                onRename={onRename}
+                onDelete={onDelete}
+              />
             ) : (
               <EmptyState icon={FolderOpen} message="No projects yet" />
             )}
@@ -66,7 +74,7 @@ export function ProjectSidebar({
           <TabsContent value="shared" className="min-h-0 overflow-y-auto">
             {/* Shared projects get no actions: only owners can rename or delete. */}
             {sharedProjects.length > 0 ? (
-              <ProjectList projects={sharedProjects} />
+              <ProjectList projects={sharedProjects} activeProjectId={activeProjectId} />
             ) : (
               <EmptyState icon={Users} message="No shared projects" />
             )}
@@ -86,43 +94,63 @@ export function ProjectSidebar({
 
 interface ProjectListProps {
   projects: ProjectSummary[];
+  activeProjectId?: string;
   onRename?: (project: ProjectSummary) => void;
   onDelete?: (project: ProjectSummary) => void;
 }
 
-function ProjectList({ projects, onRename, onDelete }: ProjectListProps) {
+function ProjectList({ projects, activeProjectId, onRename, onDelete }: ProjectListProps) {
   return (
     <ul className="space-y-1 py-2">
-      {projects.map((project) => (
-        <li
-          key={project.id}
-          className="group flex items-center gap-2 rounded-xl px-2 py-1.5 hover:bg-elevated"
-        >
-          <Folder className="h-4 w-4 shrink-0 text-copy-faint" />
-          <span className="flex-1 truncate text-sm text-copy-secondary">{project.name}</span>
-          {onRename && onDelete && (
-            <div className="flex md:opacity-0 md:group-focus-within:opacity-100 md:group-hover:opacity-100">
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                onClick={() => onRename(project)}
-                aria-label={`Rename ${project.name}`}
+      {projects.map((project) => {
+        const isActive = project.id === activeProjectId;
+        return (
+          <li
+            key={project.id}
+            className={cn(
+              "group flex items-center gap-2 rounded-xl px-2 py-1.5 hover:bg-elevated",
+              isActive && "bg-accent-dim hover:bg-accent-dim"
+            )}
+          >
+            <Link
+              href={`/editor/${project.id}`}
+              aria-current={isActive ? "page" : undefined}
+              className="flex min-w-0 flex-1 items-center gap-2 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <Folder className={cn("h-4 w-4 shrink-0", isActive ? "text-brand" : "text-copy-faint")} />
+              <span
+                className={cn(
+                  "truncate text-sm",
+                  isActive ? "font-medium text-copy-primary" : "text-copy-secondary"
+                )}
               >
-                <Pencil className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                onClick={() => onDelete(project)}
-                aria-label={`Delete ${project.name}`}
-                className="hover:text-error"
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            </div>
-          )}
-        </li>
-      ))}
+                {project.name}
+              </span>
+            </Link>
+            {onRename && onDelete && (
+              <div className="flex md:opacity-0 md:group-focus-within:opacity-100 md:group-hover:opacity-100">
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  onClick={() => onRename(project)}
+                  aria-label={`Rename ${project.name}`}
+                >
+                  <Pencil className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  onClick={() => onDelete(project)}
+                  aria-label={`Delete ${project.name}`}
+                  className="hover:text-error"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+            )}
+          </li>
+        );
+      })}
     </ul>
   );
 }

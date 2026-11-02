@@ -8,6 +8,7 @@ export interface ProjectSummary {
 const summary = { id: true, name: true } as const;
 
 // Projects the user owns, plus projects shared with their email as a collaborator.
+// The email must already be lowercased (getCurrentIdentity does this).
 export async function getProjectsForUser(userId: string, email: string | undefined) {
   const [owned, shared] = await Promise.all([
     prisma.project.findMany({
@@ -17,11 +18,7 @@ export async function getProjectsForUser(userId: string, email: string | undefin
     }),
     email
       ? prisma.project.findMany({
-          where: {
-            ownerId: { not: userId },
-            // Collaborator emails must be stored lowercased for this match.
-            collaborators: { some: { email: email.trim().toLowerCase() } },
-          },
+          where: { ownerId: { not: userId }, collaborators: { some: { email } } },
           orderBy: { createdAt: "desc" },
           select: summary,
         })

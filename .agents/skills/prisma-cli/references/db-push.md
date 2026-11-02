@@ -150,7 +150,12 @@ prisma migrate dev --name init
 
 If `db push` already created the tables, **baseline first**. Running `migrate dev --name init` against such a database finds no migration history, so it may ask to reset (dropping data), and deploying that `init` migration to an existing production database fails when it tries to recreate tables that already exist.
 
+The baseline must be the only migration, so start from a clean `prisma/migrations` directory. Any older migration left beside `0_init` would be replayed by `migrate deploy` and fail on tables that already exist, or leave a migration history that doesn't match the database.
+
 ```bash
+# 0. Archive any existing migrations (skip if prisma/migrations doesn't exist)
+mv prisma/migrations prisma/migrations-archive-$(date +%Y%m%d)
+
 # 1. Generate a baseline migration from an empty database to the current schema
 mkdir -p prisma/migrations/0_init
 prisma migrate diff \
