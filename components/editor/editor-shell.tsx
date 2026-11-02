@@ -5,18 +5,21 @@ import { useState, type ReactNode } from "react";
 import { EditorNavbar } from "@/components/editor/editor-navbar";
 import { ProjectDialogs } from "@/components/editor/project-dialogs";
 import { ProjectSidebar } from "@/components/editor/project-sidebar";
-import { ProjectDialogsContext, useProjectDialogs } from "@/hooks/use-project-dialogs";
+import { ProjectActionsContext, useProjectActions } from "@/hooks/use-project-actions";
+import type { ProjectSummary } from "@/lib/projects";
 
 interface EditorShellProps {
+  ownedProjects: ProjectSummary[];
+  sharedProjects: ProjectSummary[];
   children: ReactNode;
 }
 
-export function EditorShell({ children }: EditorShellProps) {
+export function EditorShell({ ownedProjects, sharedProjects, children }: EditorShellProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const dialogs = useProjectDialogs();
+  const actions = useProjectActions();
 
   return (
-    <ProjectDialogsContext value={dialogs}>
+    <ProjectActionsContext value={actions}>
       <div className="flex h-screen flex-col bg-base">
         <EditorNavbar
           isSidebarOpen={isSidebarOpen}
@@ -26,13 +29,14 @@ export function EditorShell({ children }: EditorShellProps) {
         <ProjectSidebar
           isOpen={isSidebarOpen}
           onClose={() => setIsSidebarOpen(false)}
-          projects={dialogs.projects}
-          onCreate={dialogs.openCreate}
-          onRename={dialogs.openRename}
-          onDelete={dialogs.openDelete}
+          ownedProjects={ownedProjects}
+          sharedProjects={sharedProjects}
+          onCreate={actions.openCreate}
+          onRename={actions.openRename}
+          onDelete={actions.openDelete}
         />
       </div>
       <ProjectDialogs />
-    </ProjectDialogsContext>
+    </ProjectActionsContext>
   );
 }
