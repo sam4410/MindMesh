@@ -3,10 +3,10 @@
 Update this file whenever the current phase, active feature, or implementation state changes.
 
 ## Current Phase
-- Feature 01 (Design System) — complete
+- Feature 02 (Editor Chrome) — complete
 
 ## Current Goal
-- Feature 02 (TBD — no spec yet)
+- Feature 03 (TBD — no spec yet)
 
 ## Completed
 
@@ -55,6 +55,9 @@ Update this file whenever the current phase, active feature, or implementation s
 - None yet.
 
 ## Architecture Decisions
+
+- Editor chrome: app/editor/layout.tsx (server) renders components/editor/editor-shell.tsx (client), which owns sidebar open state and frames every /editor screen with EditorNavbar + ProjectSidebar.
+- Dialogs: app-level components/editor/editor-dialog.tsx (title, description, footer) wraps shadcn Dialog to apply the rounded-3xl modal styling, so components/ui/dialog.tsx stays untouched.
 
 - shadcn/ui over Tailwind v4 (CSS-based token config via @theme inline in globals.css, no tailwind.config.js).
 - Dark-only theme: all shadcn :root variables set to dark values directly — no .dark class switching. A static `dark` class sits on <html> so the `dark:` utilities in generated components always apply.
