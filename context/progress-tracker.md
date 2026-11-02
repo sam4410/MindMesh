@@ -3,10 +3,10 @@
 Update this file whenever the current phase, active feature, or implementation state changes.
 
 ## Current Phase
-- Feature 04 (Project Dialogs) — complete
+- Feature 05 (Prisma) — complete
 
 ## Current Goal
-- Feature 05 (TBD — no spec yet)
+- Feature 06 (TBD — no spec yet)
 
 ## Completed
 
@@ -14,6 +14,7 @@ Update this file whenever the current phase, active feature, or implementation s
 - Feature 02: Editor Chrome — components/editor/editor-navbar.tsx (fixed-height top bar, left/center/right sections, PanelLeftOpen/PanelLeftClose toggle). components/editor/project-sidebar.tsx (floating overlay sliding from left, isOpen/onClose, Projects header + close, My Projects/Shared tabs with empty states, full-width New Project button, currently disabled). components/editor/editor-dialog.tsx dialog pattern (title, description, footer actions). app/editor/layout.tsx frames /editor with both via components/editor/editor-shell.tsx. TypeScript, ESLint and build clean.
 - Feature 03: Auth — @clerk/ui installed. ClerkProvider wraps the root layout with Clerk's `dark` theme; appearance variables in lib/clerk-appearance.ts point at globals.css CSS variables (no hardcoded colors). Sign-in/sign-up pages at app/(auth)/sign-in/[[...sign-in]] and app/(auth)/sign-up/[[...sign-up]] share app/(auth)/layout.tsx: 50/50 split on lg+ (left bg-surface panel with logo, headline, intro, three features with icon tiles, copyright | centered Clerk form on bg-base), form only below lg. Feature list uses icons per a reference design from the user, superseding the spec's "text-only" wording. proxy.ts at project root keeps /sign-in and /sign-up (from NEXT_PUBLIC_CLERK_SIGN_IN_URL / NEXT_PUBLIC_CLERK_SIGN_UP_URL) public and calls auth.protect() for everything else, including /api. `/` redirects signed-in users to /editor and signed-out users to /sign-in. UserButton in the editor navbar's right section. Build, TypeScript and ESLint clean; signed-out redirects verified (307 to /sign-in for /, /editor, /api/*).
 - Feature 04: Project Dialogs — /editor home (components/editor/editor-home.tsx): centered heading, description and New Project button, no card. hooks/use-project-dialogs.ts owns projects (mock), dialog, form (name + derived slug) and loading state, shared through ProjectDialogsContext from EditorShell. components/editor/project-dialogs.tsx renders Create (live slug preview), Rename (prefilled, current name in description, autofocus, Enter submits) and Delete (destructive confirm, no input) through EditorDialog. Sidebar lists My Projects / Shared from lib/projects.ts mock data; rename/delete actions only on owned projects; New Project enabled and wired to Create; mobile scrim closes the sidebar on outside tap. Changes live in local state only (no API, no persistence). TypeScript, ESLint and build clean; toSlug spot-checked. Signed-in UI not yet browser-verified.
+- Feature 05: Prisma — prisma/models/project.prisma (multi-file schema; prisma7.config.ts points `schema` at the prisma/ folder): Project (cuid id, ownerId = Clerk user ID, name, description?, status ProjectStatus DRAFT/ARCHIVED default DRAFT, canvasJsonPath?, createdAt/updatedAt, indexes on ownerId and createdAt) and ProjectCollaborator (cuid id, project relation onDelete Cascade, email, createdAt, unique [projectId, email], indexes on email and [projectId, createdAt]). lib/prisma.ts exports one cached PrismaClient: accelerateUrl for prisma+postgres:// URLs, @prisma/adapter-pg otherwise, throws if DATABASE_URL is unset, cached on globalThis outside production. Migration 20261102103706_init applied to local Postgres 17 (ghost_ai); client generated to app/generated/prisma (gitignored). Smoke-tested create, unique constraint and cascade delete. TypeScript, ESLint and npm run build clean.
 
 ## In Progress
 
@@ -30,6 +31,8 @@ Update this file whenever the current phase, active feature, or implementation s
 
 ## Architecture Decisions
 
+- Prisma 7.10.1 pinned exactly: npm's `latest` tag points at 8.0.0-rc, whose CLI dropped `init --output`. Generated client is gitignored, so fresh clones must run `npx prisma generate`.
+- Accelerate path uses the PrismaClient `accelerateUrl` option without @prisma/extension-accelerate (not installed); add the extension only when query caching is needed.
 - Project dialogs: one useProjectDialogs() instance lives in EditorShell and is shared via ProjectDialogsContext, so the server /editor page's client EditorHome and the sidebar open the same dialogs. Mock data and toSlug live in lib/projects.ts (components stay UI-only).
 - Route protection: proxy.ts uses bare clerkMiddleware with a plain path check, not createRouteMatcher (deprecated in @clerk/nextjs 7). Per Clerk guidance, pages, route handlers and server functions that touch user data should also call `await auth.protect()` themselves.
 - Clerk applies ~10% alpha to `colorBorder`, so it is set to var(--text-primary) (not --border-default) to keep form borders visible on dark.
@@ -49,4 +52,5 @@ Update this file whenever the current phase, active feature, or implementation s
 - shadcn CLI 4.23.0 (base-nova preset); it auto-detected Tailwind v4.
 - lucide-react ^1.66.0 installed as a direct dependency.
 - @clerk/nextjs ^7.9.23 and @clerk/ui ^1.42.2 installed.
+- Prisma 7.10.1 (prisma, @prisma/client, @prisma/adapter-pg) with pg; local PostgreSQL 17 database ghost_ai. DATABASE_URL lives in .env (read by both the Prisma CLI via dotenv and Next.js).
 - .env.local lives in build-saas-app/ (Next.js only loads env files from the project root). It holds NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY, CLERK_SECRET_KEY, NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in, NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up. proxy.ts throws at startup if the sign-in/sign-up URLs are missing.
