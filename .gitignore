@@ -39,3 +39,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local agent skill links and scratch notes
+/.claude/skills/
+/context/current-issues.md
+
+/app/generated/prisma
+/.windsurf/skills/
