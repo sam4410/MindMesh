@@ -41,7 +41,7 @@ export function ProjectSidebar({ isOpen, onClose }: ProjectSidebarProps) {
       </Tabs>
 
       <div className="p-4">
-        <Button className="w-full rounded-xl" size="lg">
+        <Button className="w-full rounded-xl" size="lg" disabled>
           <Plus className="h-5 w-5" />
           New Project
         </Button>
