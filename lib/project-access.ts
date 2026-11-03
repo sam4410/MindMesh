@@ -29,6 +29,7 @@ export async function getAccessibleProject(projectId: string, identity: Identity
   return prisma.project.findFirst({
     where: {
       id: projectId,
+      deletionPending: false,
       OR: [
         { ownerId: identity.userId },
         ...(identity.email ? [{ collaborators: { some: { email: identity.email } } }] : []),
@@ -39,17 +40,23 @@ export async function getAccessibleProject(projectId: string, identity: Identity
 }
 
 // For API routes: returns an error response unless the signed-in user owns the project.
-export async function requireOwner(projectId: string) {
+export async function requireOwner(
+  projectId: string,
+  { allowDeletionPending = false }: { allowDeletionPending?: boolean } = {}
+) {
   const { userId } = await auth();
   if (!userId) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
   const project = await prisma.project.findUnique({
     where: { id: projectId },
-    select: { ownerId: true },
+    select: { ownerId: true, deletionPending: true },
   });
   if (!project) return Response.json({ error: "Project not found" }, { status: 404 });
   if (project.ownerId !== userId) {
     return Response.json({ error: "Only the project owner can do this" }, { status: 403 });
+  }
+  if (project.deletionPending && !allowDeletionPending) {
+    return Response.json({ error: "Project not found" }, { status: 404 });
   }
   return null;
 }

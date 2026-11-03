@@ -8,30 +8,56 @@ import {
   LiveblocksProvider,
   RoomProvider,
   useErrorListener,
+  useRedo,
   useRoom,
+  useUndo,
 } from "@liveblocks/react";
 import { useLiveblocksFlow } from "@liveblocks/react-flow";
 import {
   Background,
   BackgroundVariant,
   ConnectionMode,
-  MiniMap,
+  MarkerType,
   ReactFlow,
   ReactFlowProvider,
   useReactFlow,
+  type DefaultEdgeOptions,
+  type EdgeTypes,
   type NodeTypes,
 } from "@xyflow/react";
 import { Loader2, WifiOff } from "lucide-react";
-import { useState, type DragEvent, type ReactNode } from "react";
+import { useRef, useState, type DragEvent, type ReactNode } from "react";
 
+import { CanvasControls } from "@/components/editor/canvas-controls";
+import { CanvasEdgeView } from "@/components/editor/canvas-edge";
 import { CanvasNodeView } from "@/components/editor/canvas-node";
 import { ShapePanel } from "@/components/editor/shape-panel";
 import { Button } from "@/components/ui/button";
-import { SHAPE_DRAG_TYPE, createNodeId, readShapeDragPayload } from "@/lib/canvas-shapes";
-import { DEFAULT_NODE_COLOR, type CanvasEdge, type CanvasNode } from "@/types/canvas";
+import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
+import {
+  SHAPE_DRAG_TYPE,
+  createNodeId,
+  readShapeDragPayload,
+  shapeDragPayload,
+  type ShapeDragPayload,
+} from "@/lib/canvas-shapes";
+import {
+  DEFAULT_NODE_COLOR,
+  EDGE_COLOR,
+  type CanvasEdge,
+  type CanvasNode,
+  type NodeShape,
+} from "@/types/canvas";
 
-// Defined at module level so React Flow doesn't see a new nodeTypes object on every render.
+// Defined at module level so React Flow doesn't see new type maps or options on every render.
 const nodeTypes: NodeTypes = { canvasNode: CanvasNodeView };
+const edgeTypes: EdgeTypes = { canvasEdge: CanvasEdgeView };
+// React Flow merges these into each new connection before onConnect, so Liveblocks stores them.
+const defaultEdgeOptions: DefaultEdgeOptions = {
+  type: "canvasEdge",
+  markerEnd: { type: MarkerType.ArrowClosed, color: EDGE_COLOR, width: 16, height: 16 },
+  data: { label: "" },
+};
 
 interface CollaborativeCanvasProps {
   // The project ID, which doubles as the Liveblocks room ID.
@@ -60,7 +86,7 @@ export function CollaborativeCanvas({ roomId }: CollaborativeCanvasProps) {
   }
 
   return (
-    <LiveblocksProvider authEndpoint={authenticate}>
+    <LiveblocksProvider authEndpoint={authenticate} preventUnsavedChanges>
       <RoomProvider id={roomId} initialPresence={{ cursor: null, isThinking: false }}>
         <ConnectionErrorFallback>
           <ClientSideSuspense fallback={<CanvasLoading />}>
@@ -84,26 +110,20 @@ function Canvas() {
     nodes: { initial: [] },
     edges: { initial: [] },
   });
-  const { screenToFlowPosition } = useReactFlow();
+  const reactFlow = useReactFlow();
+  const { screenToFlowPosition } = reactFlow;
+  // Liveblocks history already records every synced node and edge change.
+  const undo = useUndo();
+  const redo = useRedo();
+  useKeyboardShortcuts({ reactFlow, onUndo: undo, onRedo: redo });
+  const canvasRef = useRef<HTMLDivElement>(null);
   // On an empty canvas, fitView fires on the first dropped node and jumps the viewport to it,
   // so only fit when the room already had content on load.
   const [hadNodesOnLoad] = useState(nodes.length > 0);
 
-  function handleDragOver(event: DragEvent) {
-    // Only shape drags may drop here; anything else keeps the browser default.
-    if (!event.dataTransfer.types.includes(SHAPE_DRAG_TYPE)) return;
-    event.preventDefault();
-    event.dataTransfer.dropEffect = "copy";
-  }
-
-  function handleDrop(event: DragEvent) {
-    const payload = readShapeDragPayload(event.dataTransfer.getData(SHAPE_DRAG_TYPE));
-    if (!payload) return;
-    event.preventDefault();
-
+  function addShape(payload: ShapeDragPayload, point: { x: number; y: number }) {
     const { shape, width, height } = payload;
-    const point = screenToFlowPosition({ x: event.clientX, y: event.clientY });
-    // Centered on the cursor; going through onNodesChange syncs the node through Liveblocks.
+    // Centered on the point; going through onNodesChange syncs the node through Liveblocks.
     onNodesChange([
       {
         type: "add",
@@ -119,12 +139,40 @@ function Canvas() {
     ]);
   }
 
+  function handleCreateShape(shape: NodeShape) {
+    const bounds = canvasRef.current?.getBoundingClientRect();
+    if (!bounds) return;
+    const point = screenToFlowPosition({
+      x: bounds.left + bounds.width / 2,
+      y: bounds.top + bounds.height / 2,
+    });
+    addShape(shapeDragPayload(shape), point);
+  }
+
+  function handleDragOver(event: DragEvent) {
+    // Only shape drags may drop here; anything else keeps the browser default.
+    if (!event.dataTransfer.types.includes(SHAPE_DRAG_TYPE)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+  }
+
+  function handleDrop(event: DragEvent) {
+    const payload = readShapeDragPayload(event.dataTransfer.getData(SHAPE_DRAG_TYPE));
+    if (!payload) return;
+    event.preventDefault();
+
+    const point = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+    addShape(payload, point);
+  }
+
   return (
-    <div className="h-full w-full" onDragOver={handleDragOver} onDrop={handleDrop}>
+    <div ref={canvasRef} className="h-full w-full" onDragOver={handleDragOver} onDrop={handleDrop}>
       <ReactFlow
         nodes={nodes}
         edges={edges}
         nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
+        defaultEdgeOptions={defaultEdgeOptions}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
@@ -141,15 +189,8 @@ function Canvas() {
           color="var(--border-subtle)"
           bgColor="var(--bg-base)"
         />
-        <MiniMap
-          pannable
-          zoomable
-          bgColor="var(--bg-surface)"
-          maskColor="color-mix(in oklab, var(--bg-base) 60%, transparent)"
-          nodeColor="var(--bg-subtle)"
-          className="overflow-hidden rounded-xl border border-surface-border"
-        />
-        <ShapePanel />
+        <CanvasControls onUndo={undo} onRedo={redo} />
+        <ShapePanel onCreateShape={handleCreateShape} />
       </ReactFlow>
     </div>
   );

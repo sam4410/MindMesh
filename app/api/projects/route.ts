@@ -9,7 +9,7 @@ export async function GET() {
   if (!userId) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
   const projects = await prisma.project.findMany({
-    where: { ownerId: userId },
+    where: { ownerId: userId, deletionPending: false },
     orderBy: { createdAt: "desc" },
   });
   return Response.json(projects);

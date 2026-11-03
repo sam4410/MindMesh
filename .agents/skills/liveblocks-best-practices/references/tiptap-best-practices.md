@@ -410,18 +410,18 @@ tab or navigating away, enable the
 option:
 
 ```tsx
-import { RoomProvider } from "@liveblocks/react/suspense";
+import { LiveblocksProvider, RoomProvider } from "@liveblocks/react/suspense";
 
-<RoomProvider
-  id="my-room"
-  initialPresence={{}}
+<LiveblocksProvider
   // Warn users before they leave with unsaved changes
   // +++
-  preventUnsavedChanges={true}
+  preventUnsavedChanges
   // +++
 >
-  {/* Your components */}
-</RoomProvider>;
+  <RoomProvider id="my-room" initialPresence={{}}>
+    {/* Your components */}
+  </RoomProvider>
+</LiveblocksProvider>;
 ```
 
 This will display a browser confirmation dialog when users try to leave the page

@@ -25,7 +25,7 @@ const SHAPE_ICONS: Record<NodeShape, LucideIcon> = {
 };
 
 // Rendered inside <ReactFlow>, so React Flow's Panel pins it to the bottom-center of the canvas.
-export function ShapePanel() {
+export function ShapePanel({ onCreateShape }: { onCreateShape: (shape: NodeShape) => void }) {
   const zoom = useStore((state) => state.transform[2]);
   const previews = useRef<Partial<Record<NodeShape, HTMLDivElement | null>>>({});
 
@@ -44,6 +44,7 @@ export function ShapePanel() {
             variant="ghost"
             size="icon"
             draggable
+            onClick={() => onCreateShape(shape)}
             onDragStart={(event) => {
               event.dataTransfer.setData(SHAPE_DRAG_TYPE, JSON.stringify(shapeDragPayload(shape)));
               event.dataTransfer.effectAllowed = "copy";
@@ -54,7 +55,7 @@ export function ShapePanel() {
                 event.dataTransfer.setDragImage(preview, preview.offsetWidth / 2, preview.offsetHeight / 2);
               }
             }}
-            title={`Drag a ${shape} onto the canvas`}
+            title={`Click to add a ${shape} at the canvas center, or drag it onto the canvas`}
             aria-label={`${shape} shape`}
             className="cursor-grab rounded-full text-copy-muted hover:text-copy-primary active:cursor-grabbing"
           >

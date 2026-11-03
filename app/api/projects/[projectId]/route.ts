@@ -25,11 +25,15 @@ export async function PATCH(req: Request, ctx: Context) {
 
 export async function DELETE(_req: Request, ctx: Context) {
   const { projectId } = await ctx.params;
-  const denied = await requireOwner(projectId);
+  const denied = await requireOwner(projectId, { allowDeletionPending: true });
   if (denied) return denied;
 
-  // Room first: project IDs can be chosen by the client, so if the row went while the room
-  // survived, a new project reusing the ID would inherit the old canvas. On failure keep the row.
+  const { count } = await prisma.project.updateMany({
+    where: { id: projectId },
+    data: { deletionPending: true },
+  });
+  if (count === 0) return new Response(null, { status: 204 });
+
   try {
     await getLiveblocks().deleteRoom(projectId);
   } catch (err) {
@@ -43,6 +47,16 @@ export async function DELETE(_req: Request, ctx: Context) {
     }
   }
 
-  await prisma.project.delete({ where: { id: projectId } });
+  try {
+    await prisma.project.deleteMany({
+      where: { id: projectId, deletionPending: true },
+    });
+  } catch (err) {
+    console.error("Failed to delete project after deleting its Liveblocks room", err);
+    return Response.json(
+      { error: "Couldn't finish deleting the project. Please try again." },
+      { status: 500 }
+    );
+  }
   return new Response(null, { status: 204 });
 }

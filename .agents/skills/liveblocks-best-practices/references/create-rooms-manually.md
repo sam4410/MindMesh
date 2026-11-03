@@ -17,7 +17,7 @@ const liveblocks = new Liveblocks({
   secret: process.env.LIVEBLOCKS_SECRET_KEY!,
 });
 
-export function fetchRoom(roomId: string) {
+export async function fetchRoom(roomId: string) {
   let room;
 
   try {

@@ -12,13 +12,17 @@ const summary = { id: true, name: true } as const;
 export async function getProjectsForUser(userId: string, email: string | undefined) {
   const [owned, shared] = await Promise.all([
     prisma.project.findMany({
-      where: { ownerId: userId },
+      where: { ownerId: userId, deletionPending: false },
       orderBy: { createdAt: "desc" },
       select: summary,
     }),
     email
       ? prisma.project.findMany({
-          where: { ownerId: { not: userId }, collaborators: { some: { email } } },
+          where: {
+            ownerId: { not: userId },
+            deletionPending: false,
+            collaborators: { some: { email } },
+          },
           orderBy: { createdAt: "desc" },
           select: summary,
         })
