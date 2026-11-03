@@ -22,6 +22,9 @@ export const SHAPE_SIZES: Record<NodeShape, ShapeSize> = {
   hexagon: { width: 140, height: 100 },
 };
 
+// Smallest size a node can be resized to; still fits a short label.
+export const MIN_NODE_SIZE: ShapeSize = { width: 60, height: 40 };
+
 export function shapeDragPayload(shape: NodeShape): ShapeDragPayload {
   return { shape, ...SHAPE_SIZES[shape] };
 }

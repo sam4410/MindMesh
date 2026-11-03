@@ -1,4 +1,4 @@
-import { Panel } from "@xyflow/react";
+import { Panel, useStore } from "@xyflow/react";
 import {
   Circle,
   Cylinder,
@@ -8,10 +8,12 @@ import {
   RectangleHorizontal,
   type LucideIcon,
 } from "lucide-react";
+import { useRef } from "react";
 
+import { ShapeGraphic } from "@/components/editor/shape-graphic";
 import { Button } from "@/components/ui/button";
-import { SHAPE_DRAG_TYPE, shapeDragPayload } from "@/lib/canvas-shapes";
-import { NODE_SHAPES, type NodeShape } from "@/types/canvas";
+import { SHAPE_DRAG_TYPE, SHAPE_SIZES, shapeDragPayload } from "@/lib/canvas-shapes";
+import { DEFAULT_NODE_COLOR, NODE_SHAPES, type NodeShape } from "@/types/canvas";
 
 const SHAPE_ICONS: Record<NodeShape, LucideIcon> = {
   rectangle: RectangleHorizontal,
@@ -24,6 +26,9 @@ const SHAPE_ICONS: Record<NodeShape, LucideIcon> = {
 
 // Rendered inside <ReactFlow>, so React Flow's Panel pins it to the bottom-center of the canvas.
 export function ShapePanel() {
+  const zoom = useStore((state) => state.transform[2]);
+  const previews = useRef<Partial<Record<NodeShape, HTMLDivElement | null>>>({});
+
   return (
     <Panel
       position="bottom-center"
@@ -42,6 +47,12 @@ export function ShapePanel() {
             onDragStart={(event) => {
               event.dataTransfer.setData(SHAPE_DRAG_TYPE, JSON.stringify(shapeDragPayload(shape)));
               event.dataTransfer.effectAllowed = "copy";
+              // The browser keeps the ghost on the cursor and removes it on drop or cancel.
+              // Centered, because the drop centers the new node on the cursor.
+              const preview = previews.current[shape];
+              if (preview) {
+                event.dataTransfer.setDragImage(preview, preview.offsetWidth / 2, preview.offsetHeight / 2);
+              }
             }}
             title={`Drag a ${shape} onto the canvas`}
             aria-label={`${shape} shape`}
@@ -51,6 +62,24 @@ export function ShapePanel() {
           </Button>
         );
       })}
+
+      {/* Drag images must already be rendered when a drag starts, so they wait off-screen,
+          sized to the node a drop would create at the current zoom. */}
+      <div aria-hidden className="pointer-events-none fixed top-0 -left-[10000px]">
+        {NODE_SHAPES.map((shape) => (
+          <div
+            key={shape}
+            ref={(element) => {
+              previews.current[shape] = element;
+            }}
+            data-shape-preview={shape}
+            className="relative"
+            style={{ width: SHAPE_SIZES[shape].width * zoom, height: SHAPE_SIZES[shape].height * zoom }}
+          >
+            <ShapeGraphic shape={shape} color={DEFAULT_NODE_COLOR} />
+          </div>
+        ))}
+      </div>
     </Panel>
   );
 }
