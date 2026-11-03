@@ -1,9 +1,22 @@
 import { redirect } from "next/navigation";
+import { Suspense } from "react";
 
 import { AccessDenied } from "@/components/editor/access-denied";
+import { CollaborativeCanvas } from "@/components/editor/collaborative-canvas";
 import { getAccessibleProject, getCurrentIdentity } from "@/lib/project-access";
 
-export default async function WorkspacePage({ params }: PageProps<"/editor/[roomId]">) {
+type Props = PageProps<"/editor/[roomId]">;
+
+// The session read can't be prerendered, so it streams behind Suspense to keep room switches instant.
+export default function WorkspacePage({ params }: Props) {
+  return (
+    <Suspense fallback={<div className="h-full bg-base" />}>
+      <Workspace params={params} />
+    </Suspense>
+  );
+}
+
+async function Workspace({ params }: Pick<Props, "params">) {
   const { roomId } = await params;
 
   const identity = await getCurrentIdentity();
@@ -13,11 +26,5 @@ export default async function WorkspacePage({ params }: PageProps<"/editor/[room
   const project = await getAccessibleProject(roomId, identity);
   if (!project) return <AccessDenied />;
 
-  // shortcut: placeholder until the canvas feature adds React Flow + Liveblocks.
-  return (
-    <div className="flex h-full flex-col items-center justify-center gap-2 bg-base p-6 text-center">
-      <p className="text-sm font-medium text-copy-secondary">{project.name}</p>
-      <p className="text-sm text-copy-muted">The canvas will appear here.</p>
-    </div>
-  );
+  return <CollaborativeCanvas roomId={project.id} />;
 }

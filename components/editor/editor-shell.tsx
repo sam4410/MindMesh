@@ -37,20 +37,23 @@ export function EditorShell({ ownedProjects, sharedProjects, children }: EditorS
           onToggleAiSidebar={() => setIsAiSidebarOpen((open) => !open)}
           onShare={() => setIsShareOpen(true)}
         />
-        <main className="relative flex-1 overflow-hidden">{children}</main>
-        <ProjectSidebar
-          isOpen={isSidebarOpen}
-          onClose={() => setIsSidebarOpen(false)}
-          ownedProjects={ownedProjects}
-          sharedProjects={sharedProjects}
-          activeProjectId={currentProject?.id}
-          onCreate={actions.openCreate}
-          onRename={actions.openRename}
-          onDelete={actions.openDelete}
-        />
-        {currentProject && (
-          <AiSidebar isOpen={isAiSidebarOpen} onClose={() => setIsAiSidebarOpen(false)} />
-        )}
+        {/* The canvas fills everything below the navbar; both sidebars float over it. */}
+        <div className="relative min-h-0 flex-1">
+          <ProjectSidebar
+            isOpen={isSidebarOpen}
+            onClose={() => setIsSidebarOpen(false)}
+            ownedProjects={ownedProjects}
+            sharedProjects={sharedProjects}
+            activeProjectId={currentProject?.id}
+            onCreate={actions.openCreate}
+            onRename={actions.openRename}
+            onDelete={actions.openDelete}
+          />
+          <main className="relative h-full overflow-hidden bg-base">
+            {children}
+          </main>
+          {currentProject && <AiSidebar isOpen={isAiSidebarOpen} />}
+        </div>
       </div>
       {currentProject && (
         <ShareDialog

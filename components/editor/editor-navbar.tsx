@@ -24,24 +24,25 @@ export function EditorNavbar({
   const ToggleIcon = isSidebarOpen ? PanelLeftClose : PanelLeftOpen;
 
   return (
-    <header className="flex h-14 shrink-0 items-center gap-3 border-b border-surface-border bg-surface px-3">
-      <div className="flex flex-1 items-center">
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={onToggleSidebar}
-          aria-label={isSidebarOpen ? "Close sidebar" : "Open sidebar"}
-          aria-expanded={isSidebarOpen}
-        >
-          <ToggleIcon className="h-5 w-5" />
-        </Button>
-      </div>
-      <div className="flex min-w-0 items-center">
+    <header className="flex h-16 shrink-0 items-center gap-3 border-b border-surface-border bg-base px-4">
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={onToggleSidebar}
+        aria-label={isSidebarOpen ? "Close sidebar" : "Open sidebar"}
+        aria-expanded={isSidebarOpen}
+      >
+        <ToggleIcon className="h-5 w-5" />
+      </Button>
+      <div className="min-w-0 flex-1">
         {projectName && (
-          <h1 className="truncate text-sm font-medium text-copy-primary">{projectName}</h1>
+          <>
+            <h1 className="truncate text-sm font-medium text-copy-primary">{projectName}</h1>
+            <p className="text-xs text-copy-faint">Workspace</p>
+          </>
         )}
       </div>
-      <div className="flex flex-1 items-center justify-end gap-2">
+      <div className="flex items-center gap-2">
         {projectName && (
           <>
             <Button variant="outline" className="rounded-xl" onClick={onShare}>
@@ -49,14 +50,15 @@ export function EditorNavbar({
               Share
             </Button>
             <Button
-              variant="ghost"
-              size="icon"
+              variant={isAiSidebarOpen ? "default" : "outline"}
+              className="rounded-xl"
               onClick={onToggleAiSidebar}
               aria-label={isAiSidebarOpen ? "Close AI sidebar" : "Open AI sidebar"}
               aria-expanded={isAiSidebarOpen}
               aria-controls="ai-sidebar"
             >
-              <Sparkles className="h-5 w-5 text-ai-text" />
+              <Sparkles className="h-4 w-4" />
+              AI
             </Button>
           </>
         )}

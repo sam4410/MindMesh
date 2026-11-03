@@ -7,6 +7,12 @@
       "skillPath": "skills/clerk-nextjs-patterns/SKILL.md",
       "computedHash": "208b936809f814fa0aa2a6e15b2e880b8b9fee5f0b3ca4fce9ac2f2ea7472418"
     },
+    "liveblocks-best-practices": {
+      "source": "liveblocks/skills",
+      "sourceType": "github",
+      "skillPath": "skills/liveblocks-best-practices/SKILL.md",
+      "computedHash": "df4f54f66e81c580d25c5fee989768368837df694ab63c0f4a0fd70500cd16af"
+    },
     "prisma-cli": {
       "source": "prisma/skills",
       "sourceType": "github",
