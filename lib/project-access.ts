@@ -35,7 +35,7 @@ export async function getAccessibleProject(projectId: string, identity: Identity
         ...(identity.email ? [{ collaborators: { some: { email: identity.email } } }] : []),
       ],
     },
-    select: { id: true, name: true, ownerId: true },
+    select: { id: true, name: true, ownerId: true, canvasJsonPath: true },
   });
 }
 

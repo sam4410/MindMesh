@@ -1,5 +1,7 @@
 import { LiveblocksError } from "@liveblocks/node";
+import { del } from "@vercel/blob";
 
+import { canvasBlobPath } from "@/lib/canvas-snapshot";
 import { getLiveblocks } from "@/lib/liveblocks";
 import { requireOwner } from "@/lib/project-access";
 import { readProjectInput } from "@/lib/project-input";
@@ -45,6 +47,17 @@ export async function DELETE(_req: Request, ctx: Context) {
         { status: 502 }
       );
     }
+  }
+
+  try {
+    // By path, not the saved URL: an upload racing this delete may not have stored its URL yet.
+    await del(canvasBlobPath(projectId));
+  } catch (err) {
+    console.error("Failed to delete canvas blob", err);
+    return Response.json(
+      { error: "Couldn't delete the project's canvas. Please try again." },
+      { status: 502 }
+    );
   }
 
   try {

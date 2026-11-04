@@ -11,13 +11,13 @@ import {
   useRedo,
   useRoom,
   useUndo,
+  useUpdateMyPresence,
 } from "@liveblocks/react";
 import { useLiveblocksFlow } from "@liveblocks/react-flow";
 import {
   Background,
   BackgroundVariant,
   ConnectionMode,
-  MarkerType,
   ReactFlow,
   ReactFlowProvider,
   useReactFlow,
@@ -26,14 +26,20 @@ import {
   type NodeTypes,
 } from "@xyflow/react";
 import { Loader2, WifiOff } from "lucide-react";
-import { useRef, useState, type DragEvent, type ReactNode } from "react";
+import { useEffect, useEffectEvent, useRef, useState, type DragEvent, type ReactNode } from "react";
 
 import { CanvasControls } from "@/components/editor/canvas-controls";
 import { CanvasEdgeView } from "@/components/editor/canvas-edge";
 import { CanvasNodeView } from "@/components/editor/canvas-node";
+import { LiveCursors } from "@/components/editor/live-cursors";
+import { PresenceAvatars } from "@/components/editor/presence-avatars";
 import { ShapePanel } from "@/components/editor/shape-panel";
 import { Button } from "@/components/ui/button";
-import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
+import type { CanvasTemplate } from "@/components/editor/starter-templates";
+import { useCanvasAutosave, type CanvasLoadState } from "@/hooks/use-canvas-autosave";
+import { useRegisterCanvasImport } from "@/hooks/use-canvas-import";
+import { ZOOM_ANIMATION, useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
+import type { CanvasSnapshot } from "@/lib/canvas-snapshot";
 import {
   SHAPE_DRAG_TYPE,
   createNodeId,
@@ -43,7 +49,7 @@ import {
 } from "@/lib/canvas-shapes";
 import {
   DEFAULT_NODE_COLOR,
-  EDGE_COLOR,
+  NEW_EDGE_DEFAULTS,
   type CanvasEdge,
   type CanvasNode,
   type NodeShape,
@@ -53,11 +59,7 @@ import {
 const nodeTypes: NodeTypes = { canvasNode: CanvasNodeView };
 const edgeTypes: EdgeTypes = { canvasEdge: CanvasEdgeView };
 // React Flow merges these into each new connection before onConnect, so Liveblocks stores them.
-const defaultEdgeOptions: DefaultEdgeOptions = {
-  type: "canvasEdge",
-  markerEnd: { type: MarkerType.ArrowClosed, color: EDGE_COLOR, width: 16, height: 16 },
-  data: { label: "" },
-};
+const defaultEdgeOptions: DefaultEdgeOptions = { ...NEW_EDGE_DEFAULTS, data: { label: "" } };
 
 interface CollaborativeCanvasProps {
   // The project ID, which doubles as the Liveblocks room ID.
@@ -87,7 +89,7 @@ export function CollaborativeCanvas({ roomId }: CollaborativeCanvasProps) {
 
   return (
     <LiveblocksProvider authEndpoint={authenticate} preventUnsavedChanges>
-      <RoomProvider id={roomId} initialPresence={{ cursor: null, isThinking: false }}>
+      <RoomProvider id={roomId} initialPresence={{ cursor: null, thinking: false }}>
         <ConnectionErrorFallback>
           <ClientSideSuspense fallback={<CanvasLoading />}>
             {/* The provider lets Canvas call useReactFlow() above its own <ReactFlow>. */}
@@ -120,6 +122,67 @@ function Canvas() {
   // On an empty canvas, fitView fires on the first dropped node and jumps the viewport to it,
   // so only fit when the room already had content on load.
   const [hadNodesOnLoad] = useState(nodes.length > 0);
+  const room = useRoom();
+  const updateMyPresence = useUpdateMyPresence();
+  // A room with any content is the live state, so the saved canvas is only for an empty room.
+  const [loadState, setLoadState] = useState<CanvasLoadState>(
+    nodes.length > 0 || edges.length > 0 ? "ready" : "loading"
+  );
+
+  // An effect event so this sees the room as it is when the fetch finishes: someone may have
+  // started drawing in the meantime, and then the saved canvas must not land on top.
+  const applySavedCanvas = useEffectEvent((saved: CanvasSnapshot | null) => {
+    if (saved && nodes.length === 0 && edges.length === 0) {
+      room.batch(() => {
+        onNodesChange(saved.nodes.map((item) => ({ type: "add", item })));
+        onEdgesChange(saved.edges.map((item) => ({ type: "add", item })));
+      });
+      // Otherwise the first Ctrl+Z would wipe the restored canvas for everyone.
+      room.history.clear();
+      reactFlow.fitView({ ...ZOOM_ANIMATION, padding: 0.2 });
+    }
+    setLoadState("ready");
+  });
+
+  useEffect(() => {
+    if (loadState !== "loading") return;
+    const controller = new AbortController();
+    fetch(`/api/projects/${room.id}/canvas`, { signal: controller.signal })
+      .then((res) => {
+        if (!res.ok) throw new Error(`Canvas load failed with status ${res.status}`);
+        return res.status === 204 ? null : (res.json() as Promise<CanvasSnapshot>);
+      })
+      .then(applySavedCanvas)
+      .catch((err) => {
+        if (controller.signal.aborted) return;
+        console.error(err);
+        setLoadState("failed");
+      });
+    return () => controller.abort();
+  }, [loadState, room.id]);
+
+  useCanvasAutosave({
+    projectId: room.id,
+    nodes,
+    edges,
+    loadState,
+    onRetryLoad: () => setLoadState("loading"),
+  });
+
+  // Replaces the canvas: clear everything, then add the template, all through the synced flow
+  // handlers. Clearing uses onDelete because Liveblocks ignores "remove" changes in
+  // onNodesChange/onEdgesChange. One batch means collaborators see a single swap (never an empty
+  // canvas) and one undo restores the previous canvas.
+  function importTemplate(template: CanvasTemplate) {
+    room.batch(() => {
+      onDelete({ nodes, edges });
+      onNodesChange(template.nodes.map((item) => ({ type: "add", item })));
+      onEdgesChange(template.edges.map((item) => ({ type: "add", item })));
+    });
+    // React Flow queues this until the new nodes have rendered.
+    reactFlow.fitView({ ...ZOOM_ANIMATION, padding: 0.2 });
+  }
+  useRegisterCanvasImport(importTemplate);
 
   function addShape(payload: ShapeDragPayload, point: { x: number; y: number }) {
     const { shape, width, height } = payload;
@@ -180,6 +243,12 @@ function Canvas() {
         connectionMode={ConnectionMode.Loose}
         fitView={hadNodesOnLoad}
         colorMode="dark"
+        // Cursors are shared in flow coordinates so they land on the same spot of the diagram
+        // for everyone; Liveblocks throttles these presence updates.
+        onMouseMove={(event) =>
+          updateMyPresence({ cursor: screenToFlowPosition({ x: event.clientX, y: event.clientY }) })
+        }
+        onMouseLeave={() => updateMyPresence({ cursor: null })}
       >
         {/* bgColor overrides React Flow's own dark gray so the canvas matches the page. */}
         <Background
@@ -189,6 +258,8 @@ function Canvas() {
           color="var(--border-subtle)"
           bgColor="var(--bg-base)"
         />
+        <LiveCursors />
+        <PresenceAvatars />
         <CanvasControls onUndo={undo} onRedo={redo} />
         <ShapePanel onCreateShape={handleCreateShape} />
       </ReactFlow>

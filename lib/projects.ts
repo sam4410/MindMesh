@@ -3,16 +3,17 @@ import { prisma } from "@/lib/prisma";
 export interface ProjectSummary {
   id: string;
   name: string;
+  deletionPending: boolean;
 }
 
-const summary = { id: true, name: true } as const;
+const summary = { id: true, name: true, deletionPending: true } as const;
 
 // Projects the user owns, plus projects shared with their email as a collaborator.
 // The email must already be lowercased (getCurrentIdentity does this).
 export async function getProjectsForUser(userId: string, email: string | undefined) {
   const [owned, shared] = await Promise.all([
     prisma.project.findMany({
-      where: { ownerId: userId, deletionPending: false },
+      where: { ownerId: userId },
       orderBy: { createdAt: "desc" },
       select: summary,
     }),

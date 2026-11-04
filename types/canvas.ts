@@ -1,4 +1,4 @@
-import type { Edge, Node } from "@xyflow/react";
+import { MarkerType, type Edge, type Node } from "@xyflow/react";
 
 // Shapes listed in ui-context.md; rendering for each lands with the custom node feature.
 export const NODE_SHAPES = ["rectangle", "diamond", "circle", "pill", "cylinder", "hexagon"] as const;
@@ -45,3 +45,9 @@ export type CanvasEdgeData = {
 };
 
 export type CanvasEdge = Edge<CanvasEdgeData, "canvasEdge">;
+
+// Every new edge gets these: connections (via React Flow's defaultEdgeOptions) and template edges.
+export const NEW_EDGE_DEFAULTS = {
+  type: "canvasEdge",
+  markerEnd: { type: MarkerType.ArrowClosed, color: EDGE_COLOR, width: 16, height: 16 },
+} as const satisfies Pick<CanvasEdge, "type" | "markerEnd">;

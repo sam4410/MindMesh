@@ -4,7 +4,8 @@ declare global {
     Presence: {
       // Canvas coordinates; null while the pointer is outside the canvas.
       cursor: { x: number; y: number } | null;
-      isThinking: boolean;
+      // True while this user is waiting on an AI generation.
+      thinking: boolean;
     };
     UserMeta: {
       id: string;

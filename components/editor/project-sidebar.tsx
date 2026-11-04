@@ -114,39 +114,52 @@ function ProjectList({ projects, activeProjectId, onRename, onDelete }: ProjectL
               isActive && "border-brand/30 bg-accent-dim hover:bg-accent-dim"
             )}
           >
-            <Link
-              href={`/editor/${project.id}`}
-              aria-current={isActive ? "page" : undefined}
-              className="flex min-w-0 flex-1 items-center gap-2 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <span
-                aria-hidden
-                className={cn("h-1.5 w-1.5 shrink-0 rounded-full", isActive ? "bg-brand" : "bg-copy-faint")}
-              />
-              <span
-                className={cn(
-                  "truncate text-sm",
-                  isActive ? "font-medium text-copy-primary" : "text-copy-secondary"
-                )}
+            {project.deletionPending ? (
+              <div className="flex min-w-0 flex-1 items-center gap-2 px-2 py-2">
+                <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-error" />
+                <span className="truncate text-sm text-copy-secondary">{project.name}</span>
+                <span className="shrink-0 text-xs text-error">Deletion pending</span>
+              </div>
+            ) : (
+              <Link
+                href={`/editor/${project.id}`}
+                aria-current={isActive ? "page" : undefined}
+                className="flex min-w-0 flex-1 items-center gap-2 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
-                {project.name}
-              </span>
-            </Link>
+                <span
+                  aria-hidden
+                  className={cn(
+                    "h-1.5 w-1.5 shrink-0 rounded-full",
+                    isActive ? "bg-brand" : "bg-copy-faint"
+                  )}
+                />
+                <span
+                  className={cn(
+                    "truncate text-sm",
+                    isActive ? "font-medium text-copy-primary" : "text-copy-secondary"
+                  )}
+                >
+                  {project.name}
+                </span>
+              </Link>
+            )}
             {onRename && onDelete && (
               <div className="flex md:opacity-0 md:group-focus-within:opacity-100 md:group-hover:opacity-100">
-                <Button
-                  variant="ghost"
-                  size="icon-xs"
-                  onClick={() => onRename(project)}
-                  aria-label={`Rename ${project.name}`}
-                >
-                  <Pencil className="h-4 w-4" />
-                </Button>
+                {!project.deletionPending && (
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    onClick={() => onRename(project)}
+                    aria-label={`Rename ${project.name}`}
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+                )}
                 <Button
                   variant="ghost"
                   size="icon-xs"
                   onClick={() => onDelete(project)}
-                  aria-label={`Delete ${project.name}`}
+                  aria-label={`${project.deletionPending ? "Retry deletion of" : "Delete"} ${project.name}`}
                   className="hover:text-error"
                 >
                   <Trash2 className="h-4 w-4" />

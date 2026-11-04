@@ -71,12 +71,20 @@ export function ProjectDialogs() {
             ),
           }
         : {
-            title: "Delete project",
-            description: `"${dialog.project.name}" will be permanently deleted. This can't be undone.`,
+            title: dialog.project.deletionPending ? "Retry project deletion" : "Delete project",
+            description: dialog.project.deletionPending
+              ? `Deletion of "${dialog.project.name}" was interrupted. Retry to clean up its canvas and finish deleting it.`
+              : `"${dialog.project.name}" will be permanently deleted. This can't be undone.`,
             body: null,
             action: (
               <Button variant="destructive" onClick={submit} disabled={!canSubmit}>
-                {isLoading ? "Deleting…" : "Delete project"}
+                {isLoading
+                  ? dialog.project.deletionPending
+                    ? "Retrying…"
+                    : "Deleting…"
+                  : dialog.project.deletionPending
+                    ? "Retry deletion"
+                    : "Delete project"}
               </Button>
             ),
           };
