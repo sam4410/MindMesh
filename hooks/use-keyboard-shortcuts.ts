@@ -13,7 +13,7 @@ interface KeyboardShortcutsOptions {
 }
 
 // Typing a label must not zoom the canvas or undo canvas history.
-function isEditableTarget(target: EventTarget | null) {
+export function isEditableTarget(target: EventTarget | null) {
   return (
     target instanceof HTMLElement &&
     (target.isContentEditable || target.closest("input, textarea, select") !== null)

@@ -20,13 +20,24 @@ import {
   ConnectionMode,
   ReactFlow,
   ReactFlowProvider,
+  getConnectedEdges,
+  useEdges,
+  useNodes,
   useReactFlow,
   type DefaultEdgeOptions,
   type EdgeTypes,
   type NodeTypes,
 } from "@xyflow/react";
 import { Loader2, WifiOff } from "lucide-react";
-import { useEffect, useEffectEvent, useRef, useState, type DragEvent, type ReactNode } from "react";
+import {
+  useEffect,
+  useEffectEvent,
+  useRef,
+  useState,
+  type DragEvent,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
 
 import { CanvasControls } from "@/components/editor/canvas-controls";
 import { CanvasEdgeView } from "@/components/editor/canvas-edge";
@@ -38,7 +49,7 @@ import { Button } from "@/components/ui/button";
 import type { CanvasTemplate } from "@/components/editor/starter-templates";
 import { useCanvasAutosave, type CanvasLoadState } from "@/hooks/use-canvas-autosave";
 import { useRegisterCanvasImport } from "@/hooks/use-canvas-import";
-import { ZOOM_ANIMATION, useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
+import { ZOOM_ANIMATION, isEditableTarget, useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
 import type { CanvasSnapshot } from "@/lib/canvas-snapshot";
 import {
   SHAPE_DRAG_TYPE,
@@ -114,6 +125,8 @@ function Canvas() {
   });
   const reactFlow = useReactFlow();
   const { screenToFlowPosition } = reactFlow;
+  const flowNodes = useNodes<CanvasNode>();
+  const flowEdges = useEdges<CanvasEdge>();
   // Liveblocks history already records every synced node and edge change.
   const undo = useUndo();
   const redo = useRedo();
@@ -139,7 +152,8 @@ function Canvas() {
       });
       // Otherwise the first Ctrl+Z would wipe the restored canvas for everyone.
       room.history.clear();
-      reactFlow.fitView({ ...ZOOM_ANIMATION, padding: 0.2 });
+      // A fit on an empty canvas stays queued and zooms in on the first dropped node.
+      if (saved.nodes.length > 0) reactFlow.fitView({ ...ZOOM_ANIMATION, padding: 0.2 });
     }
     setLoadState("ready");
   });
@@ -228,8 +242,30 @@ function Canvas() {
     addShape(payload, point);
   }
 
+  function handleKeyDown(event: KeyboardEvent) {
+    if (event.key !== "Delete" && event.key !== "Backspace") return;
+    if (isEditableTarget(event.target)) return;
+
+    const selectedNodes = flowNodes.filter((node) => node.selected);
+    const selectedEdges = flowEdges.filter((edge) => edge.selected);
+    if (selectedNodes.length === 0 && selectedEdges.length === 0) return;
+    // onDelete removes only what it's given, so a deleted node's edges have to be listed too.
+    onDelete({
+      nodes: selectedNodes,
+      edges: [...selectedEdges, ...getConnectedEdges(selectedNodes, flowEdges)],
+    });
+  }
+
   return (
-    <div ref={canvasRef} className="h-full w-full" onDragOver={handleDragOver} onDrop={handleDrop}>
+    // tabIndex: clicking the empty canvas focuses nothing otherwise, and keys would miss this div.
+    <div
+      ref={canvasRef}
+      tabIndex={-1}
+      className="h-full w-full outline-none"
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+      onKeyDown={handleKeyDown}
+    >
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -240,6 +276,8 @@ function Canvas() {
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
         onDelete={onDelete}
+        // handleKeyDown owns deletion, so it all goes through Liveblocks.
+        deleteKeyCode={null}
         connectionMode={ConnectionMode.Loose}
         fitView={hadNodesOnLoad}
         colorMode="dark"

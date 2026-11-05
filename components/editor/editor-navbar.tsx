@@ -109,7 +109,8 @@ export function EditorNavbar({
             </Button>
           </>
         )}
-        <UserButton />
+        {/* In the workspace it sits in the canvas's presence panel instead. */}
+        {!projectName && <UserButton />}
       </div>
     </header>
   );

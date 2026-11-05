@@ -75,7 +75,10 @@ export function CanvasNodeView({ id, data, selected }: NodeProps<CanvasNode>) {
             onChange={(event) => updateNodeData(id, { label: event.target.value })}
             onBlur={() => setIsEditing(false)}
             onKeyDown={(event) => {
-              if (event.key === "Escape") setIsEditing(false);
+              if (event.key !== "Escape") return;
+              // Otherwise focus falls to <body>, out of reach of the canvas's Delete key handler.
+              event.currentTarget.closest<HTMLElement>(".react-flow__node")?.focus();
+              setIsEditing(false);
             }}
             // nodrag/nopan/nowheel: selecting text or scrolling must not move the node or canvas.
             className="nodrag nopan nowheel absolute inset-0 resize-none overflow-hidden bg-transparent px-4 text-center outline-none placeholder:text-copy-faint"

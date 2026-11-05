@@ -12,7 +12,7 @@ interface CanvasControlsProps {
 
 // Rendered inside <ReactFlow>; the Panel pins it to the bottom-left, level with the shape panel.
 export function CanvasControls({ onUndo, onRedo }: CanvasControlsProps) {
-  const { zoomIn, zoomOut, fitView } = useReactFlow();
+  const { zoomIn, zoomOut, fitView, getNodes } = useReactFlow();
   const canUndo = useCanUndo();
   const canRedo = useCanRedo();
 
@@ -24,7 +24,14 @@ export function CanvasControls({ onUndo, onRedo }: CanvasControlsProps) {
       className="flex items-center gap-1 rounded-full border border-surface-border bg-surface/90 p-1.5 backdrop-blur"
     >
       <ControlButton icon={ZoomOut} label="Zoom out (-)" onClick={() => zoomOut(ZOOM_ANIMATION)} />
-      <ControlButton icon={Maximize} label="Fit view" onClick={() => fitView(ZOOM_ANIMATION)} />
+      {/* A fit on an empty canvas stays queued and zooms in on the first dropped node. */}
+      <ControlButton
+        icon={Maximize}
+        label="Fit view"
+        onClick={() => {
+          if (getNodes().length > 0) fitView(ZOOM_ANIMATION);
+        }}
+      />
       <ControlButton icon={ZoomIn} label="Zoom in (+)" onClick={() => zoomIn(ZOOM_ANIMATION)} />
       <div aria-hidden className="mx-1 h-5 w-px bg-surface-border" />
       <ControlButton icon={Undo2} label="Undo (Ctrl+Z)" onClick={onUndo} disabled={!canUndo} />
