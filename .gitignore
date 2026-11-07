@@ -46,3 +46,6 @@ next-env.d.ts
 
 /app/generated/prisma
 /.windsurf/skills/
+
+# trigger.dev local dev state
+.trigger
