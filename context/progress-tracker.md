@@ -3,10 +3,10 @@
 Update this file whenever the current phase, active feature, or implementation state changes.
 
 ## Current Phase
-- Trigger.dev setup — complete
+- Feature 22 (Design Agent API) — complete
 
 ## Current Goal
-- Feature 22 (Design Agent API) — not started; spec in context/feature-specs/22-design-agent-api.md
+- Feature 23 (Design Agent Logic) — not started; spec in context/feature-specs/23-design-agent-logic.md
 
 ## Completed
 
@@ -46,20 +46,22 @@ Update this file whenever the current phase, active feature, or implementation s
 
 - Trigger.dev Setup — @trigger.dev/sdk 4.8.3 pinned exactly to match the CLI and the MCP entry in .mcp.json. trigger.config.ts at the root (project from TRIGGER_PROJECT_REF, runtime node, dirs ./trigger, maxDuration 3600, 3 retries, none in dev). trigger/generate-design.ts ("generate-design", payload { projectId, prompt }) and trigger/generate-spec.ts ("generate-spec", payload { projectId }) are example tasks: they log and return { projectId, generated: false }, with no AI call, canvas write or Blob write. POST /api/trigger takes { task, projectId, prompt? }: 401 signed out; 400 for an unknown task, missing projectId, or a missing, blank or over-4000-character design prompt; 404 without project access (owner or collaborator, via getAccessibleProject); 502 if Trigger.dev fails; otherwise 202 { runId } only. It imports task types only, so task code stays out of the Next.js bundle. No UI calls it yet. Trigger.dev v4 doesn't need this route to serve tasks; it exists to start them. .trigger is ignored by git and ESLint. Verified: 5 temporary handler test groups (identity, project access and SDK stubbed; removed afterwards); signed-out POST through the proxy on the dev server returns 401; the key in .env.local was accepted by a read-only runs.list; TypeScript, ESLint and npm run build clean. With `trigger dev` (worker 20261106.2, node-24, project ref read from .env.local), both tasks ran from the dashboard on 2026-11-06: each completed on attempt 1 with the expected payload and { projectId: "test", generated: false }. Not yet verified: POST /api/trigger with a real Clerk session starting a real run.
 
+- Feature 22: Design Agent API — TaskRun model (prisma/models/task-run.prisma, migration 20261107142548_add_task_run, applied to local ghost_ai): id, runId (unique; that unique index also serves as the spec's runId index, so no second one), projectId (foreign key to Project, cascade delete), userId, createdAt, and a compound index on userId and projectId. POST /api/ai/design takes { prompt, roomId, projectId }: 401 signed out; 400 for bad JSON, a missing, blank or over-4000-character prompt, a missing projectId, or roomId differing from projectId (the room ID is the project ID, and access is checked on the project, so this stops a run targeting another room); 404 without project access (owner or collaborator); otherwise it starts the design-agent task with the trimmed prompt, stores a TaskRun and returns 202 { runId }. Trigger.dev failure returns 502. If the TaskRun write fails, it returns 502 and cancels the run, since nobody could get a token for it. POST /api/ai/design/token takes { runId }: 401 signed out; 400 no runId; 404 unless a TaskRun has that runId and the caller's userId (collaborators can't get tokens for each other's runs); otherwise it returns { token }, a public token that can only read that run; 502 if creating it fails. trigger/design-agent.ts ("design-agent", payload { prompt, roomId }) logs and echoes its input, with no AI call or canvas write. No UI calls these routes yet. Verified with a temporary test (removed afterwards) against real Postgres, Trigger.dev and the running `trigger dev` worker, with only Clerk stubbed: all 400, 401 and 404 cases above start no run or row; owner and collaborator runs each store the right TaskRun; the run completed on attempt 1 and echoed the trimmed prompt and roomId; the token's only scope was read:runs for its run, reading that run returned 200 and reading another run 403; a forced TaskRun write failure returned 502, kept no row and the run ended CANCELED; a missing TRIGGER_SECRET_KEY returned 502 from both routes and stored nothing; deleting the project removed its TaskRun rows. Signed-out POSTs to both routes through the proxy on the production build return 401. TypeScript, ESLint and npm run build clean. Not verified: a real Clerk session calling these routes.
+
 ## In Progress
 
 - None.
 
 ## Next Up
-- TBD
+- Feature 23 (Design Agent Logic)
 
 
 
 ## Open Questions
 
 - Which AI model should design and spec generation use? The user wants OpenAI, with Gemini as an additional option, and both SDKs are installed. The models and how to choose between them aren't decided, and the example tasks make no AI calls.
-- TaskRun and spec records: architecture-context.md lists them in PostgreSQL, but they have no Prisma models yet, so POST /api/trigger stores nothing. Feature 22's spec defines TaskRun; spec records are still undefined.
-- Feature 22's spec adds POST /api/ai/design and trigger/design-agent.ts. Should they replace the example POST /api/trigger and trigger/generate-design.ts?
+- TaskRun and spec records: architecture-context.md lists them in PostgreSQL, but they have no Prisma models yet, so POST /api/trigger stores nothing. Feature 22 added TaskRun, used only by POST /api/ai/design; spec records are still undefined.
+- POST /api/ai/design and trigger/design-agent.ts now exist alongside the example POST /api/trigger and trigger/generate-design.ts, which Feature 22's spec left in place. Should the example design path be removed?
 - Spec output location: architecture-context.md's AI Generation Model says "filesystem", while its Storage Model says Vercel Blob.
 
 ## Architecture Decisions
