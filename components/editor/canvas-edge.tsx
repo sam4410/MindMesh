@@ -2,15 +2,22 @@ import {
   BaseEdge,
   EdgeLabelRenderer,
   getSmoothStepPath,
+  Position,
   useReactFlow,
   type EdgeProps,
 } from "@xyflow/react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
 import { EDGE_COLOR, type CanvasEdge, type CanvasNode } from "@/types/canvas";
 
 const LABEL_HINT = "Double-click to add label";
+// Clear space kept between a wrapped label and the nodes on either side.
+const LABEL_GAP_PADDING = 8;
+// Below this a label wraps into a tall column, so it's allowed to overlap the nodes instead.
+const MIN_LABEL_WIDTH = 72;
+
+const isHorizontal = (position: Position) => position === Position.Left || position === Position.Right;
 
 export function CanvasEdgeView({
   id,
@@ -26,6 +33,7 @@ export function CanvasEdgeView({
 }: EdgeProps<CanvasEdge>) {
   const { updateEdgeData } = useReactFlow<CanvasNode, CanvasEdge>();
   const [draft, setDraft] = useState<string | null>(null);
+  const editStatus = useRef<"editing" | "committed" | "cancelled">("committed");
   const label = data?.label ?? "";
   const isEditing = draft !== null;
 
@@ -39,17 +47,35 @@ export function CanvasEdgeView({
     targetPosition,
     borderRadius: 8,
   });
+  // Between side-by-side nodes the label sits in the gap between their facing sides (the handle
+  // positions), so it wraps to that width instead of running under the nodes.
+  const maxLabelWidth =
+    isHorizontal(sourcePosition) && isHorizontal(targetPosition)
+      ? Math.max(Math.abs(targetX - sourceX) - LABEL_GAP_PADDING, MIN_LABEL_WIDTH)
+      : undefined;
 
   function save() {
+    if (editStatus.current !== "editing") return;
+    editStatus.current = "committed";
     // updateEdgeData becomes a replace change through onEdgesChange, which Liveblocks syncs.
     if (draft !== null && draft.trim() !== label) updateEdgeData(id, { label: draft.trim() });
+    setDraft(null);
+  }
+
+  function startEditing() {
+    editStatus.current = "editing";
+    setDraft(label);
+  }
+
+  function cancelEditing() {
+    editStatus.current = "cancelled";
     setDraft(null);
   }
 
   return (
     <>
       {/* nopan stops React Flow from zooming on double-click or panning when dragging an edge. */}
-      <g className="group nopan" onDoubleClick={() => setDraft(label)}>
+      <g className="group nopan" onDoubleClick={startEditing}>
         <BaseEdge
           id={id}
           path={path}
@@ -68,7 +94,7 @@ export function CanvasEdgeView({
         <div
           style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }}
           className="nodrag nopan pointer-events-auto absolute text-xs"
-          onDoubleClick={() => setDraft(label)}
+          onDoubleClick={startEditing}
         >
           {isEditing ? (
             // The invisible copy sizes the grid cell, so the input grows with the text.
@@ -84,13 +110,22 @@ export function CanvasEdgeView({
                 onChange={(event) => setDraft(event.target.value)}
                 onBlur={save}
                 onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === "Escape") save();
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    save();
+                  } else if (event.key === "Escape") {
+                    event.preventDefault();
+                    cancelEditing();
+                  }
                 }}
                 className="nodrag nopan col-start-1 row-start-1 w-full min-w-0 bg-transparent text-copy-primary outline-none placeholder:text-copy-faint"
               />
             </div>
           ) : label ? (
-            <span className="rounded-full border border-surface-border bg-surface px-2 py-0.5 whitespace-pre text-copy-secondary">
+            <span
+              style={{ maxWidth: maxLabelWidth }}
+              className="block w-max rounded-xl border border-surface-border bg-surface px-2 py-0.5 text-center leading-snug break-words whitespace-pre-line text-copy-secondary"
+            >
               {label}
             </span>
           ) : (

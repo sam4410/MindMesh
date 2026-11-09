@@ -20,7 +20,7 @@ Complete the existing AI sidebar placeholder and turn it into a proper floating 
    Use shadcn `Tabs`.
    - `AI Architect`
    - `Specs`
-   - active tab should use the accent styling, like `bg-accent` and `text-accent`
+   - active tab should use the accent styling, like `bg-accent` and `text-accent-foreground`
    - inactive tab text should stay muted with `text-muted-text`
 
 4. Build the AI Architect tab.

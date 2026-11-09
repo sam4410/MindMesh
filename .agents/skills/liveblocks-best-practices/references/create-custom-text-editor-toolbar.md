@@ -208,11 +208,10 @@ use `{ FloatingToolbar }` if you'd like to modify the floating version.
 ```tsx
 import { FloatingToolbar, Toolbar } from "@liveblocks/react-lexical";
 import { Icon } from "@liveblocks/react-ui";
-import { Editor } from "@tiptap/react";
 
-function CustomToolbar({ editor }: { editor: Editor | null }) {
+function CustomToolbar() {
   return (
-    <FloatingToolbar editor={editor}>
+    <FloatingToolbar>
       <Toolbar.SectionHistory />
       <Toolbar.Separator />
       <Toolbar.Button
@@ -220,13 +219,6 @@ function CustomToolbar({ editor }: { editor: Editor | null }) {
         icon={<Icon.QuestionMark />}
         shortcut="CMD-H"
         onClick={() => console.log("help")}
-      />
-      <Toolbar.Toggle
-        name="Highlight"
-        icon={<div>🖊️</div>}
-        active={editor?.isActive("highlight") ?? false}
-        onClick={() => editor?.chain().focus().toggleHighlight().run()}
-        disabled={!editor?.can().chain().focus().toggleHighlight().run()}
       />
     </FloatingToolbar>
   );

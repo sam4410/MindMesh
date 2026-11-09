@@ -4,7 +4,7 @@ import { Suspense } from "react";
 
 async function RootRedirect() {
   const { isAuthenticated } = await auth();
-  return redirect(isAuthenticated ? "/editor" : process.env.NEXT_PUBLIC_CLERK_SIGN_IN_URL!);
+  return redirect(isAuthenticated ? "/editor" : "/sign-in");
 }
 
 export default function Home() {

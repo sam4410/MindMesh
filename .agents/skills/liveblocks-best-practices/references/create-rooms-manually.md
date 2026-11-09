@@ -11,7 +11,7 @@ for this and do standard
 [error handling](https://liveblocks.io/docs/api-reference/liveblocks-node#error-handling).
 
 ```tsx
-import { Liveblocks } from "@liveblocks/node";
+import { Liveblocks, LiveblocksError } from "@liveblocks/node";
 
 const liveblocks = new Liveblocks({
   secret: process.env.LIVEBLOCKS_SECRET_KEY!,

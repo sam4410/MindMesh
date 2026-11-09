@@ -9,9 +9,12 @@ import { ProjectDialogs } from "@/components/editor/project-dialogs";
 import { ProjectSidebar } from "@/components/editor/project-sidebar";
 import { ShareDialog } from "@/components/editor/share-dialog";
 import { StarterTemplatesModal } from "@/components/editor/starter-templates-modal";
+import { AiChatContext, type ChatEntry, type SendChatMessage } from "@/hooks/use-ai-chat";
+import { AiActivityContext, NO_AI_ACTIVITY, type AiActivity } from "@/hooks/use-ai-status";
 import { CanvasSaveContext, type CanvasSaveStatus } from "@/hooks/use-canvas-autosave";
 import { CanvasImportContext, type ImportTemplate } from "@/hooks/use-canvas-import";
 import { ProjectActionsContext, useProjectActions } from "@/hooks/use-project-actions";
+import type { CanvasSnapshot } from "@/lib/canvas-snapshot";
 import type { ProjectSummary } from "@/lib/projects";
 
 interface EditorShellProps {
@@ -30,7 +33,17 @@ export function EditorShell({ ownedProjects, sharedProjects, children }: EditorS
   const [saveStatus, setSaveStatus] = useState<CanvasSaveStatus>("idle");
   // Filled by the canvas; see hooks/use-canvas-autosave.ts.
   const saveCanvasRef = useRef<(() => void) | null>(null);
-  const canvasSave = useMemo(() => ({ setStatus: setSaveStatus, saveRef: saveCanvasRef }), []);
+  const canvasRef = useRef<CanvasSnapshot | null>(null);
+  const canvasSave = useMemo(
+    () => ({ setStatus: setSaveStatus, saveRef: saveCanvasRef, canvasRef }),
+    []
+  );
+  // Filled by the canvas from the room's status feed and presence; see hooks/use-ai-status.ts.
+  const [aiActivity, setAiActivity] = useState<AiActivity>(NO_AI_ACTIVITY);
+  // Filled by the canvas from the room's ai-chat feed; see hooks/use-ai-chat.ts.
+  const [chatMessages, setChatMessages] = useState<ChatEntry[]>([]);
+  const sendChatRef = useRef<SendChatMessage | null>(null);
+  const aiChat = useMemo(() => ({ setMessages: setChatMessages, sendRef: sendChatRef }), []);
   const actions = useProjectActions();
   const { roomId } = useParams<{ roomId?: string }>();
   // Only projects the user can access are in these lists, so an unauthorized room gets no workspace chrome.
@@ -42,6 +55,8 @@ export function EditorShell({ ownedProjects, sharedProjects, children }: EditorS
     <ProjectActionsContext value={actions}>
     <CanvasImportContext value={importTemplateRef}>
     <CanvasSaveContext value={canvasSave}>
+    <AiActivityContext value={setAiActivity}>
+    <AiChatContext value={aiChat}>
       <div className="flex h-screen flex-col bg-base">
         <EditorNavbar
           isSidebarOpen={isSidebarOpen}
@@ -70,7 +85,19 @@ export function EditorShell({ ownedProjects, sharedProjects, children }: EditorS
             {children}
           </main>
           {currentProject && (
-            <AiSidebar isOpen={isAiSidebarOpen} onClose={() => setIsAiSidebarOpen(false)} />
+            <AiSidebar
+              isOpen={isAiSidebarOpen}
+              onClose={() => setIsAiSidebarOpen(false)}
+              activity={aiActivity}
+              chatMessages={chatMessages}
+              projectId={currentProject.id}
+              onSendMessage={async (content, role) => {
+                const send = sendChatRef.current;
+                if (!send) throw new Error("The canvas room isn't connected");
+                await send(content, role);
+              }}
+              getCanvas={() => canvasRef.current}
+            />
           )}
         </div>
       </div>
@@ -97,6 +124,8 @@ export function EditorShell({ ownedProjects, sharedProjects, children }: EditorS
         />
       )}
       <ProjectDialogs />
+    </AiChatContext>
+    </AiActivityContext>
     </CanvasSaveContext>
     </CanvasImportContext>
     </ProjectActionsContext>

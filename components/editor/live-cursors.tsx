@@ -3,6 +3,7 @@
 import { useAuth } from "@clerk/nextjs";
 import { shallow, useOthersMapped } from "@liveblocks/react";
 import { useStore, ViewportPortal } from "@xyflow/react";
+import { Loader2 } from "lucide-react";
 
 // Rendered inside <ReactFlow>. Cursors are stored in flow coordinates, so ViewportPortal places
 // them on the same spot of the diagram for everyone, whatever each person's pan and zoom.
@@ -10,7 +11,12 @@ export function LiveCursors() {
   const { userId } = useAuth();
   const zoom = useStore((state) => state.transform[2]);
   const others = useOthersMapped(
-    (other) => ({ id: other.id, cursor: other.presence.cursor, ...other.info }),
+    (other) => ({
+      id: other.id,
+      cursor: other.presence.cursor,
+      thinking: other.presence.thinking,
+      ...other.info,
+    }),
     shallow
   );
 
@@ -38,9 +44,13 @@ export function LiveCursors() {
             </svg>
             <span
               style={{ backgroundColor: other.color }}
-              className="absolute top-4 left-3 rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap text-(color:--bg-base)"
+              className="absolute top-4 left-3 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap text-(color:--bg-base)"
             >
               {other.name}
+              {/* Presence from older clients may lack the field, which counts as not thinking. */}
+              {other.thinking === true && (
+                <Loader2 aria-label="thinking" className="h-3 w-3 animate-spin" />
+              )}
             </span>
           </div>
         );

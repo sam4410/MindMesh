@@ -55,7 +55,7 @@ You can combine this with URL params, for example like this:
 
 ```tsx file="app/document/[slug]/page.tsx"
 import { Room } from "./room";
-import { useSession } from "your-auth-library";
+import { getSession } from "your-auth-library";
 
 export default async function Page({
   params,
@@ -63,7 +63,7 @@ export default async function Page({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const { user } = await useSession();
+  const { user } = await getSession();
 
   if (!user) {
     return <div>Please sign in to access this document</div>;
@@ -93,7 +93,7 @@ the naming pattern:
 
 ```tsx file="app/document/[slug]/page.tsx"
 import { Room } from "./room";
-import { useSession } from "your-auth-library";
+import { getSession } from "your-auth-library";
 
 export default async function Page({
   params,
@@ -101,7 +101,7 @@ export default async function Page({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const { user } = await useSession();
+  const { user } = await getSession();
 
   if (!user) {
     return <div>Please sign in to access this document</div>;

@@ -15,7 +15,7 @@ prisma migrate diff [options]
     - Empty (`empty`)
     - Schema file (`schema`)
     - Migrations directory (`migrations`)
-    - Database URL (`url`) or Configured Datasource (`config-datasource`)
+    - Configured Datasource (`config-datasource`)
 - Outputs the difference:
     - Human-readable summary (default)
     - SQL script (`--script`)
@@ -33,7 +33,6 @@ prisma migrate diff [options]
 - `--from-empty`, `--to-empty`
 - `--from-schema <path>`, `--to-schema <path>`
 - `--from-migrations <path>`, `--to-migrations <path>`
-- `--from-url <url>`, `--to-url <url>`
 - `--from-config-datasource`, `--to-config-datasource` (uses `prisma.config.ts`)
 
 ## Examples
@@ -42,9 +41,24 @@ prisma migrate diff [options]
 
 Compare current production DB to your local schema:
 
+Configure the production URL as the datasource in `prisma.production.config.ts`:
+
+```typescript
+import 'dotenv/config'
+import { defineConfig, env } from 'prisma/config'
+
+export default defineConfig({
+  schema: 'prisma/schema.prisma',
+  datasource: {
+    url: env('PROD_DB_URL'),
+  },
+})
+```
+
 ```bash
 prisma migrate diff \
-  --from-url "$PROD_DB_URL" \
+  --config prisma.production.config.ts \
+  --from-config-datasource \
   --to-schema ./prisma/schema.prisma \
   --script
 ```

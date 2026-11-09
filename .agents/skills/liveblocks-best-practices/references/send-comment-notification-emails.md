@@ -24,7 +24,7 @@ const webhookHandler = new WebhookHandler(
 );
 
 export async function POST(request: Request) {
-  const body = await request.json();
+  const rawBody = await request.text();
   const headers = request.headers;
 
   // Verify if this is a real webhook request
@@ -32,7 +32,7 @@ export async function POST(request: Request) {
   try {
     event = webhookHandler.verifyRequest({
       headers: headers,
-      rawBody: JSON.stringify(body),
+      rawBody,
     });
   } catch (err) {
     console.error(err);

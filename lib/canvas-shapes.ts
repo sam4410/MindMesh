@@ -41,7 +41,8 @@ export function readShapeDragPayload(raw: string): ShapeDragPayload | null {
   const { shape, width, height } = value as Record<string, unknown>;
   if (!NODE_SHAPES.includes(shape as NodeShape)) return null;
   if (!isPositive(width) || !isPositive(height)) return null;
-  return { shape: shape as NodeShape, width, height };
+  const validatedShape = shape as NodeShape;
+  return { shape: validatedShape, ...SHAPE_SIZES[validatedShape] };
 }
 
 function isPositive(value: unknown): value is number {

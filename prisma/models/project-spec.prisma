@@ -1,0 +1,11 @@
+// Metadata for a generated spec; the Markdown itself lives in Vercel Blob at specs/{projectId}/{id}.md.
+model ProjectSpec {
+  // uuid so the generate-spec task can choose the ID before uploading to the path that contains it.
+  id        String   @id @default(uuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  filePath  String // Vercel Blob URL of the Markdown file
+  createdAt DateTime @default(now())
+
+  @@index([projectId, createdAt])
+}

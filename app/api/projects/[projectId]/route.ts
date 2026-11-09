@@ -1,9 +1,10 @@
 import { LiveblocksError } from "@liveblocks/node";
-import { del } from "@vercel/blob";
+import { del, list } from "@vercel/blob";
 
 import { canvasBlobPath } from "@/lib/canvas-snapshot";
 import { getLiveblocks } from "@/lib/liveblocks";
 import { requireOwner } from "@/lib/project-access";
+import { specBlobFolder } from "@/lib/project-spec";
 import { readProjectInput } from "@/lib/project-input";
 import { prisma } from "@/lib/prisma";
 
@@ -56,6 +57,22 @@ export async function DELETE(_req: Request, ctx: Context) {
     console.error("Failed to delete canvas blob", err);
     return Response.json(
       { error: "Couldn't delete the project's canvas. Please try again." },
+      { status: 502 }
+    );
+  }
+
+  try {
+    // By folder, like the canvas by path: the records cascade away with the project, the files don't.
+    let cursor: string | undefined;
+    do {
+      const page = await list({ prefix: specBlobFolder(projectId), cursor });
+      if (page.blobs.length > 0) await del(page.blobs.map((blob) => blob.url));
+      cursor = page.hasMore ? page.cursor : undefined;
+    } while (cursor);
+  } catch (err) {
+    console.error("Failed to delete spec blobs", err);
+    return Response.json(
+      { error: "Couldn't delete the project's specs. Please try again." },
       { status: 502 }
     );
   }

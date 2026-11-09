@@ -31,7 +31,7 @@ function TextEditors() {
 
   const newEditor = useMutation(({ storage }) => {
     const newId = nanoid();
-    storage.get("editorsIds").push(newId);
+    storage.get("editorIds").push(newId);
   }, []);
 
   return (

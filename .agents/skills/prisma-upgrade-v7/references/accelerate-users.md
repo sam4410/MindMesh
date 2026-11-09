@@ -4,6 +4,14 @@ Special migration instructions for users of Prisma Accelerate or Prisma Postgres
 
 ## Important
 
+**Prisma Accelerate, including hosted Accelerate connections for Prisma Postgres,
+will be retired on December 1, 2026.** Before then, follow the documented
+transition path for your setup:
+
+- [Keep your existing database and remove Accelerate](https://www.prisma.io/docs/accelerate/keep-your-database)
+- [Connect to Prisma Postgres without Accelerate](https://www.prisma.io/docs/postgres/database/switch-from-accelerate)
+- [Migrate a PostgreSQL database to Prisma Postgres](https://www.prisma.io/docs/prisma-postgres/import-from-existing-database-postgresql)
+
 **Do NOT pass Accelerate URLs to driver adapters.**
 
 Driver adapters (like `PrismaPg`) expect direct database connection strings. They will fail with `prisma://` or `prisma+postgres://` URLs.

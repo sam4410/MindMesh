@@ -20,6 +20,9 @@
 # production
 /build
 
+# test cases
+/Test Case.txt
+
 # misc
 .DS_Store
 *.pem

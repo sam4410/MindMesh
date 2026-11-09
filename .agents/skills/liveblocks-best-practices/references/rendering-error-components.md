@@ -47,7 +47,7 @@ function Page() {
         <aside>
           // +++
           <ClientSideSuspense fallback={<div>Loading…</div>}>
-            <LiveAvatars />
+            <Avatars />
           </ClientSideSuspense>
           // +++
         </aside>
@@ -98,7 +98,7 @@ function Page() {
 
         <aside>
           // +++
-          <LiveAvatars />
+          <Avatars />
           // +++
         </aside>
       </RoomProvider>

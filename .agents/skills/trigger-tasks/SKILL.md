@@ -95,10 +95,13 @@ export const parentTask = task({
     const result = await childTask.triggerAndWait({ data: "x" });
     if (result.ok) return result.output; // typed child output
     console.error("child failed", result.error);
-    // or: const output = await childTask.triggerAndWait({ data: "x" }).unwrap();
+    throw result.error; // propagate child failure to the parent run
   },
 });
 ```
+
+If the parent should fail whenever the child fails, you can instead use
+`const output = await childTask.triggerAndWait({ data: "x" }).unwrap();`.
 
 `SubtaskUnwrapError` carries `runId`, `taskId`, and `cause`. For fan-out use `childTask.batchTriggerAndWait([{ payload: a }, { payload: b }])`; the result has a `.runs` array, each entry `{ ok, id, output?, error?, taskIdentifier }`.
 
@@ -121,7 +124,7 @@ const handle = await tasks.trigger<typeof emailSequence>(
 
 ### 5. Idempotency keys
 
-`idempotencyKeys.create(key, { scope })` returns a 64-char hashed key. A raw string key defaults to `"run"` scope (v4.3.1+); for once-ever behavior use `scope: "global"`.
+`idempotencyKeys.create(key, { scope })` returns a 64-char hashed key. A raw string key defaults to `"run"` scope (v4.3.1+). Global-scope keys expire after 30 days by default, so they do not provide permanent once-ever protection. If permanent deduplication is required, enforce it with durable application-level state (for example, a unique database constraint) as well.
 
 ```ts
 import { idempotencyKeys, task } from "@trigger.dev/sdk";

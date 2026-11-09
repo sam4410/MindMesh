@@ -76,7 +76,7 @@ Present a prioritized report with estimated impact:
 ## Cost Optimization Report
 
 ### High impact
-1. **Right-size `process-images`** — currently `large-2x`, average run 2s. `small-2x` could cut this task's cost by ~16x.
+1. **Right-size `process-images`** — currently `large-2x`, average run 2s. At published rates, estimated cost including the run charge is about `$0.001385` on `large-2x` versus `$0.000160` on `small-2x` (~8.7x lower for the same duration).
    `machine: { preset: "small-2x" }`  // was "large-2x"
 
 ### Medium impact
@@ -88,19 +88,28 @@ Present a prioritized report with estimated impact:
    `maxDuration: 300`  // 5 minutes
 ```
 
-## Machine preset costs (relative)
+## Machine preset costs
 
-Larger machines cost proportionally more per second of compute:
+Published managed-worker compute rates:
 
-| Preset | vCPU | RAM | Relative cost |
-|--------|------|-----|---------------|
-| micro | 0.25 | 0.25 GB | 0.25x |
-| small-1x | 0.5 | 0.5 GB | 1x (baseline) |
-| small-2x | 1 | 1 GB | 2x |
-| medium-1x | 1 | 2 GB | 2x |
-| medium-2x | 2 | 4 GB | 4x |
-| large-1x | 4 | 8 GB | 8x |
-| large-2x | 8 | 16 GB | 16x |
+| Preset | vCPU | RAM | Compute cost / second | Relative compute cost vs. small-1x |
+|--------|------|-----|----------------------|-----------------------------------|
+| micro | 0.25 | 0.25 GB | `$0.0000169` | 0.5x |
+| small-1x | 0.5 | 0.5 GB | `$0.0000338` | 1x (baseline) |
+| small-2x | 1 | 1 GB | `$0.0000675` | ~2x |
+| medium-1x | 1 | 2 GB | `$0.0000850` | ~2.5x |
+| medium-2x | 2 | 4 GB | `$0.0001700` | ~5x |
+| large-1x | 4 | 8 GB | `$0.0003400` | ~10x |
+| large-2x | 8 | 16 GB | `$0.0006800` | ~20x |
+
+Each production run also costs `$0.000025` per invocation; dev runs are not
+charged this fee. Total estimated cost is
+`(compute cost per second × duration) + invocation cost`. For example, at the
+same 60-second duration, `large-2x` costs `$0.040825` and `small-2x` costs
+`$0.004075`, or about 10x as much. For short runs, the fixed invocation charge
+reduces the ratio (as in the 2-second example above).
+
+Rates are from [Trigger.dev Cloud pricing](https://trigger.dev/pricing#computePricing).
 
 ## Key principles
 

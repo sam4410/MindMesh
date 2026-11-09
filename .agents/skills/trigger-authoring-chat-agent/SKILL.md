@@ -65,18 +65,34 @@ export const myChat = chat.agent({
 ### 2. Add two server actions
 
 Both run on your server, so the browser never holds your environment secret key. This is also
-where per-user / per-plan authorization and any paired DB writes live.
+where per-user / per-plan authorization and any paired DB writes live. Authenticate the caller
+and verify they own (or are otherwise authorized to access) the requested chat in **both**
+actions, using your application's existing authentication and ownership checks. A session scope
+limits what a token can access; it does not prove that the caller owns that chat.
 
 ```ts app/actions.ts
 "use server";
 import { auth } from "@trigger.dev/sdk";
 import { chat } from "@trigger.dev/sdk/ai";
 
-// Creates the Session + first run, returns a session PAT. Idempotent on (env, chatId).
-export const startChatSession = chat.createStartSessionAction("my-chat");
+// Replace these app-specific helpers with your existing auth and ownership checks.
+async function assertCanAccessChat(chatId: string) {
+  const user = await requireAuthenticatedUser();
+  await requireChatOwnership(chatId, user.id);
+}
 
-// Pure mint. The transport calls this on 401/403 to refresh an expired token.
+// Wrap the helper so authorization runs before it creates a session or first run.
+const createChatSession = chat.createStartSessionAction("my-chat");
+export async function startChatSession(
+  input: Parameters<typeof createChatSession>[0]
+) {
+  await assertCanAccessChat(input.chatId);
+  return createChatSession(input);
+}
+
+// The transport calls this on 401/403 to refresh an expired token.
 export async function mintChatAccessToken(chatId: string) {
+  await assertCanAccessChat(chatId);
   return auth.createPublicToken({
     scopes: { read: { sessions: chatId }, write: { sessions: chatId } },
     expirationTime: "1h",

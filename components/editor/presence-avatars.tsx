@@ -13,6 +13,7 @@ interface Collaborator {
   name: string;
   avatar: string;
   color: string;
+  thinking: boolean;
 }
 
 function initials(name: string) {
@@ -24,7 +25,7 @@ function initials(name: string) {
 export function PresenceAvatars() {
   const { userId } = useAuth();
   const others = useOthersMapped(
-    (other) => ({ id: other.id, ...other.info }),
+    (other) => ({ id: other.id, thinking: other.presence.thinking, ...other.info }),
     shallow
   );
 
@@ -51,7 +52,7 @@ export function PresenceAvatars() {
         <>
           <ul className="flex items-center -space-x-1.5">
             {visible.map((user) => (
-              <li key={user.id} title={user.name}>
+              <li key={user.id} title={user.thinking ? `${user.name} is thinking…` : user.name}>
                 <CollaboratorAvatar user={user} />
               </li>
             ))}
@@ -74,7 +75,8 @@ export function PresenceAvatars() {
 
 // Display-only: no button, link or hover action.
 function CollaboratorAvatar({ user }: { user: Collaborator }) {
-  const className = `${AVATAR_SIZE} rounded-full ring-2 ring-surface-border-subtle`;
+  // The design agent's avatar pulses while it works.
+  const className = `${AVATAR_SIZE} rounded-full ring-2 ring-surface-border-subtle${user.thinking ? " animate-pulse" : ""}`;
   if (user.avatar) {
     // Clerk avatar URLs are small and already sized by Clerk's CDN; next/image adds nothing here.
     // eslint-disable-next-line @next/next/no-img-element

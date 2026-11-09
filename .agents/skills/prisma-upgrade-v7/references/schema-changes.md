@@ -100,11 +100,24 @@ datasource db {
 ```typescript
 export default defineConfig({
   datasource: {
-    url: env('DATABASE_URL'),
-    directUrl: env('DIRECT_URL'),
+    url: env('DIRECT_URL'),
     shadowDatabaseUrl: env('SHADOW_DATABASE_URL'),
   },
 })
+```
+
+For application queries, configure connectivity separately through a driver
+adapter using the application's database URL:
+
+```typescript
+import { PrismaClient } from '../generated/prisma/client'
+import { PrismaPg } from '@prisma/adapter-pg'
+
+const adapter = new PrismaPg({
+  connectionString: process.env.DATABASE_URL!,
+})
+
+const prisma = new PrismaClient({ adapter })
 ```
 
 ## After Schema Changes

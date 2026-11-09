@@ -28,9 +28,11 @@ below will only render once their hook contents have been loaded.
 import { ClientSideSuspense, useStorage } from "@liveblocks/react/suspense";
 
 function App() {
-  <ClientSideSuspense fallback={<div>Loading…</div>}>
-    <Component />
-  </ClientSideSuspense>;
+  return (
+    <ClientSideSuspense fallback={<div>Loading…</div>}>
+      <Component />
+    </ClientSideSuspense>
+  );
 }
 
 function Component() {

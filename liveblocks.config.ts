@@ -4,7 +4,7 @@ declare global {
     Presence: {
       // Canvas coordinates; null while the pointer is outside the canvas.
       cursor: { x: number; y: number } | null;
-      // True while this user is waiting on an AI generation.
+      // True while this participant is generating; the design agent sets it on its own presence.
       thinking: boolean;
     };
     UserMeta: {

@@ -31,7 +31,7 @@ function App() {
         const response = await fetch("/api/liveblocks-auth", {
           method: "POST",
           headers: {
-            Authentication: "<your own headers here>",
+            Authorization: "<your own headers here>",
             "Content-Type": "application/json",
           },
           // Don't forget to pass `room` down. Note that it

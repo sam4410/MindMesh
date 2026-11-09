@@ -10,7 +10,7 @@ import {
   type RefObject,
 } from "react";
 
-import { serializeCanvas } from "@/lib/canvas-snapshot";
+import { serializeCanvas, type CanvasSnapshot } from "@/lib/canvas-snapshot";
 import type { CanvasEdge, CanvasNode } from "@/types/canvas";
 
 const SAVE_DEBOUNCE_MS = 5000;
@@ -21,10 +21,13 @@ export type CanvasSaveStatus = "idle" | "saving" | "saved" | "error";
 export type CanvasLoadState = "loading" | "ready" | "failed";
 
 // The Save button lives in the navbar (EditorShell) while the canvas sits deep inside the page.
+// canvasRef hands the live canvas to EditorShell too (the AI sidebar's spec generation reads it);
+// it's null until the canvas has loaded.
 export const CanvasSaveContext = createContext<{
   setStatus: (status: CanvasSaveStatus) => void;
   saveRef: RefObject<(() => void) | null>;
-}>({ setStatus: () => {}, saveRef: { current: null } });
+  canvasRef: RefObject<CanvasSnapshot | null>;
+}>({ setStatus: () => {}, saveRef: { current: null }, canvasRef: { current: null } });
 
 interface UseCanvasAutosaveOptions {
   projectId: string;
@@ -42,7 +45,7 @@ export function useCanvasAutosave({
   loadState,
   onRetryLoad,
 }: UseCanvasAutosaveOptions) {
-  const { setStatus, saveRef } = useContext(CanvasSaveContext);
+  const { setStatus, saveRef, canvasRef } = useContext(CanvasSaveContext);
   const url = `/api/projects/${projectId}/canvas`;
   const serialized = useMemo(() => serializeCanvas(nodes, edges), [nodes, edges]);
   const latest = useRef(serialized);
@@ -118,8 +121,11 @@ export function useCanvasAutosave({
       if (loadState === "failed") onRetryLoad();
       else if (loadState === "ready") void save(true);
     };
+    // Before loading finishes the room may look empty while a saved canvas is still on its way.
+    canvasRef.current = loadState === "ready" ? { nodes, edges } : null;
     return () => {
       saveRef.current = null;
+      canvasRef.current = null;
     };
   });
 

@@ -47,6 +47,8 @@ import { PresenceAvatars } from "@/components/editor/presence-avatars";
 import { ShapePanel } from "@/components/editor/shape-panel";
 import { Button } from "@/components/ui/button";
 import type { CanvasTemplate } from "@/components/editor/starter-templates";
+import { useSyncAiChat } from "@/hooks/use-ai-chat";
+import { useSyncAiActivity } from "@/hooks/use-ai-status";
 import { useCanvasAutosave, type CanvasLoadState } from "@/hooks/use-canvas-autosave";
 import { useRegisterCanvasImport } from "@/hooks/use-canvas-import";
 import { ZOOM_ANIMATION, isEditableTarget, useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
@@ -174,6 +176,19 @@ function Canvas() {
       });
     return () => controller.abort();
   }, [loadState, room.id]);
+
+  const isAiActive = useSyncAiActivity();
+  useSyncAiChat();
+
+  // The agent lays designs out from the canvas origin, so when it finishes, fit them into view
+  // the same way a template import does. A fit on an empty canvas would stay queued (see above).
+  const wasAiActive = useRef(isAiActive);
+  useEffect(() => {
+    if (wasAiActive.current && !isAiActive && reactFlow.getNodes().length > 0) {
+      reactFlow.fitView({ ...ZOOM_ANIMATION, padding: 0.2 });
+    }
+    wasAiActive.current = isAiActive;
+  }, [isAiActive, reactFlow]);
 
   useCanvasAutosave({
     projectId: room.id,

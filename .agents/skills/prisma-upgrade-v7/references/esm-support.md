@@ -19,8 +19,8 @@ Add `"type": "module"` to `package.json` and use an ESM-compatible `tsconfig.jso
 ```json
 {
   "compilerOptions": {
-    "module": "ESNext",
-    "moduleResolution": "bundler",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
     "target": "ES2023",
     "strict": true,
     "esModuleInterop": true,
@@ -70,7 +70,7 @@ generator client {
   runtime                = "nodejs"
   moduleFormat           = "esm"
   generatedFileExtension = "ts"
-  importFileExtension    = "ts"
+  importFileExtension    = "js"
 }
 ```
 
@@ -79,15 +79,15 @@ generator client {
 ### Server Code
 
 ```typescript
-import { PrismaClient } from '../generated/prisma/client'
+import { PrismaClient } from '../generated/prisma/client.js'
 ```
 
 ### Browser-Safe Types
 
 ```typescript
-import { Prisma } from '../generated/prisma/browser'
-import { Role } from '../generated/prisma/enums'
-import type { UserModel } from '../generated/prisma/models/User'
+import { Prisma } from '../generated/prisma/browser.js'
+import { Role } from '../generated/prisma/enums.js'
+import type { UserModel } from '../generated/prisma/models/User.js'
 ```
 
 ## File Extensions

@@ -39,6 +39,15 @@ export async function getAccessibleProject(projectId: string, identity: Identity
   });
 }
 
+// For read routes after getAccessibleProject returned null: 403 when the project exists but isn't
+// shared with the user (the same split as requireOwner), otherwise 404.
+export async function projectAccessError(projectId: string) {
+  const exists = await prisma.project.count({ where: { id: projectId, deletionPending: false } });
+  return exists
+    ? Response.json({ error: "You don't have access to this project" }, { status: 403 })
+    : Response.json({ error: "Project not found" }, { status: 404 });
+}
+
 // For API routes: returns an error response unless the signed-in user owns the project.
 export async function requireOwner(
   projectId: string,

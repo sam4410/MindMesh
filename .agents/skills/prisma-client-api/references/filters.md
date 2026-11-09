@@ -201,7 +201,7 @@ where: {
 // Users without profile
 where: {
   profile: {
-    isNot: null
+    is: null
   }
 }
 ```

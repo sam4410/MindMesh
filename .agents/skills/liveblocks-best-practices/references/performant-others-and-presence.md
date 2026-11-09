@@ -48,16 +48,16 @@ Use this in combination with
 to update components only when this user's presence changes.
 
 ```tsx
-import { useOthers } from "@liveblocks/react/suspense";
+import { useOtherConnectionIds, useOther } from "@liveblocks/react/suspense";
 
 // ✅ Updates only when users join or leave
 function Cursors() {
-  const others = useOthers();
+  const connectionIds = useOtherConnectionIds();
 
   return (
     <div>
-      {others.map((other) => (
-        <Cursor key={other.connectionId} connectionId={other.connectionId} />
+      {connectionIds.map((connectionId) => (
+        <Cursor key={connectionId} connectionId={connectionId} />
       ))}
     </div>
   );

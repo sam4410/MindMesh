@@ -1,4 +1,5 @@
 import type { CanvasEdge, CanvasNode } from "@/types/canvas";
+import { NODE_SHAPES, type NodeShape } from "@/types/canvas";
 
 export interface CanvasSnapshot {
   nodes: CanvasNode[];
@@ -24,6 +25,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isNode(value: unknown) {
   if (!isRecord(value) || typeof value.id !== "string" || !isRecord(value.data)) return false;
+  const { label, color, shape, textColor } = value.data;
+  if (
+    typeof label !== "string" ||
+    typeof color !== "string" ||
+    !NODE_SHAPES.includes(shape as NodeShape) ||
+    (textColor !== undefined && typeof textColor !== "string")
+  ) {
+    return false;
+  }
   const { position } = value;
   return isRecord(position) && Number.isFinite(position.x) && Number.isFinite(position.y);
 }

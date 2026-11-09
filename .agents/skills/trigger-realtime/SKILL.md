@@ -136,14 +136,26 @@ export function TriggerButton({ triggerToken }: { triggerToken: string }) {
 
 ### 4. Trigger and subscribe in one hook
 
+Mint a single-use Trigger Token on the server and pass it to the client
+component:
+
+```ts
+// backend (API route / server action)
+import { auth } from "@trigger.dev/sdk";
+
+export async function createMyTaskTriggerToken() {
+  return auth.createTriggerPublicToken("my-task");
+}
+```
+
 ```tsx
 "use client";
 import { useRealtimeTaskTrigger } from "@trigger.dev/react-hooks";
 import type { myTask } from "@/trigger/myTask";
 
-export function Runner({ publicAccessToken }: { publicAccessToken: string }) {
+export function Runner({ triggerToken }: { triggerToken: string }) {
   const { submit, run, isLoading } = useRealtimeTaskTrigger<typeof myTask>("my-task", {
-    accessToken: publicAccessToken,
+    accessToken: triggerToken,
   });
   if (run) return <div>{run.status}</div>;
   return <button onClick={() => submit({ foo: "bar" })} disabled={isLoading}>Run</button>;
