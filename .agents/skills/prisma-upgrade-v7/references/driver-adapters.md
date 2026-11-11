@@ -99,7 +99,8 @@ import { PrismaClient } from '../generated/client'
 import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
 
 const adapter = new PrismaBetterSqlite3({
-  url: process.env.DATABASE_URL || 'file:./dev.db'
+  url: process.env.DATABASE_URL || 'file:./dev.db',
+  timestampFormat: 'unixepoch-ms'
 })
 
 const prisma = new PrismaClient({ adapter })
@@ -194,18 +195,7 @@ const adapter = new PrismaPg({
 
 ## SSL Configuration
 
-### Accept self-signed certificates
-
-```typescript
-const adapter = new PrismaPg({
-  connectionString: process.env.DATABASE_URL,
-  ssl: {
-    rejectUnauthorized: false  // Accept self-signed certs
-  }
-})
-```
-
-### Proper SSL configuration
+### Verify certificates with a trusted CA
 
 ```typescript
 const adapter = new PrismaPg({
@@ -216,6 +206,10 @@ const adapter = new PrismaPg({
   }
 })
 ```
+
+Alternatively, add the CA certificate to Node.js's trust store with
+`NODE_EXTRA_CA_CERTS=/path/to/ca-cert.pem`. Keep certificate verification
+enabled; do not use `rejectUnauthorized: false`.
 
 ## Migration from v6
 

@@ -31,9 +31,9 @@ export default function AuthLayout({ children }: LayoutProps<"/">) {
       <aside className="hidden flex-col justify-between border-r border-surface-border bg-surface p-10 lg:flex">
         <div className="flex items-center gap-2.5">
           <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand text-xs font-bold text-primary-foreground">
-            G
+            M
           </div>
-          <span className="text-sm font-semibold text-copy-primary">Ghost AI</span>
+          <span className="text-sm font-semibold text-copy-primary">MindMesh</span>
         </div>
 
         <div>
@@ -41,7 +41,7 @@ export default function AuthLayout({ children }: LayoutProps<"/">) {
             Design systems at the speed of thought.
           </h1>
           <p className="mt-5 max-w-sm leading-relaxed text-copy-secondary">
-            Describe your architecture in plain English. Ghost AI maps it to a shared canvas your
+            Describe your architecture in plain English. MindMesh maps it to a shared canvas your
             whole team can refine in real time.
           </p>
           <ul className="mt-12 space-y-6">
@@ -60,7 +60,7 @@ export default function AuthLayout({ children }: LayoutProps<"/">) {
         </div>
 
         {/* Hardcoded: new Date() during prerender is disallowed under Cache Components. */}
-        <p className="text-xs text-copy-faint">© 2026 Ghost AI. All rights reserved.</p>
+        <p className="text-xs text-copy-faint">© 2026 MindMesh. All rights reserved.</p>
       </aside>
 
       <main className="flex items-center justify-center p-4">{children}</main>

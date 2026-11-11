@@ -1,0 +1,11 @@
+// A Trigger.dev run and who started it, used to verify ownership before issuing a token for it.
+model TaskRun {
+  id        String   @id @default(cuid())
+  runId     String   @unique // Postgres backs this with an index, so runId needs no separate @@index
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId    String // Clerk user ID
+  createdAt DateTime @default(now())
+
+  @@index([userId, projectId])
+}

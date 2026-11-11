@@ -4,6 +4,14 @@ Special migration instructions for users of Prisma Accelerate or Prisma Postgres
 
 ## Important
 
+**Prisma Accelerate, including hosted Accelerate connections for Prisma Postgres,
+will be retired on December 1, 2026.** Before then, follow the documented
+transition path for your setup:
+
+- [Keep your existing database and remove Accelerate](https://www.prisma.io/docs/accelerate/keep-your-database)
+- [Connect to Prisma Postgres without Accelerate](https://www.prisma.io/docs/postgres/database/switch-from-accelerate)
+- [Migrate a PostgreSQL database to Prisma Postgres](https://www.prisma.io/docs/prisma-postgres/import-from-existing-database-postgresql)
+
 **Do NOT pass Accelerate URLs to driver adapters.**
 
 Driver adapters (like `PrismaPg`) expect direct database connection strings. They will fail with `prisma://` or `prisma+postgres://` URLs.
@@ -64,30 +72,31 @@ const adapter = new PrismaPg({
 
 ## Migrations with Accelerate
 
-For migrations, you may need a direct database connection:
+### `prisma://` Accelerate URLs
 
-### Option 1: Use Accelerate URL for everything
+Use `prisma://` with Prisma Client's `accelerateUrl` at runtime. Prisma Migrate
+and introspection commands such as `prisma db pull` require a direct database
+URL; they cannot use the Accelerate proxy URL.
 
-Accelerate URLs work with Prisma CLI commands:
+### `prisma+postgres://` URLs
 
-```bash
-# Works with Accelerate URL
-prisma migrate deploy
-prisma db push
-```
+Hosted Prisma Postgres `prisma+postgres://` URLs are supported by Prisma Client
+through `accelerateUrl`. For migrations and introspection, configure
+`prisma.config.ts` with the database's direct PostgreSQL URL instead. This is
+also the required path when Prisma CLI needs direct database access.
 
-### Option 2: Use direct URL for migrations
+### Configure a direct URL for Prisma CLI
 
 ```env
-DATABASE_URL="prisma+postgres://..."  # For app
-DIRECT_DATABASE_URL="postgresql://..."  # For migrations
+DATABASE_URL="prisma://..."               # Accelerate at app runtime
+DIRECT_DATABASE_URL="postgresql://..."    # Prisma CLI migrations/introspection
 ```
 
 ```typescript
 // prisma.config.ts
 export default defineConfig({
   datasource: {
-    url: env('DIRECT_DATABASE_URL'),  // Direct URL for CLI
+    url: env('DIRECT_DATABASE_URL'),
   },
 })
 ```

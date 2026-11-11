@@ -43,15 +43,29 @@ datasource: {
 }
 ```
 
-### datasource.directUrl
+### Separate CLI and application connections
 
-Direct connection URL (bypassing connection pooler):
+When migrations need a direct connection but the application uses a pooled
+connection, configure the direct URL for Prisma CLI commands:
 
 ```typescript
 datasource: {
-  url: env('DATABASE_URL'),
-  directUrl: env('DIRECT_DATABASE_URL'),
+  url: env('DIRECT_DATABASE_URL'),
 }
+```
+
+Configure the application's pooled connection separately through its driver
+adapter:
+
+```typescript
+import { PrismaClient } from '../generated/prisma/client'
+import { PrismaPg } from '@prisma/adapter-pg'
+
+const adapter = new PrismaPg({
+  connectionString: process.env.DATABASE_URL!,
+})
+
+const prisma = new PrismaClient({ adapter })
 ```
 
 ### datasource.shadowDatabaseUrl
@@ -104,8 +118,7 @@ export default defineConfig({
   
   // Database connection
   datasource: {
-    url: env('DATABASE_URL'),
-    directUrl: env('DIRECT_DATABASE_URL'),
+    url: env('DIRECT_DATABASE_URL'),
     shadowDatabaseUrl: env('SHADOW_DATABASE_URL'),
   },
 })
@@ -161,11 +174,13 @@ import { defineConfig, env } from 'prisma/config'
 export default defineConfig({
   schema: 'prisma/schema.prisma',
   datasource: {
-    url: env('DATABASE_URL'),
-    directUrl: env('DIRECT_URL'),
+    url: env('DIRECT_URL'),
   },
 })
 ```
+
+Configure application connectivity separately with a driver adapter and its
+application database URL.
 
 And update schema.prisma:
 

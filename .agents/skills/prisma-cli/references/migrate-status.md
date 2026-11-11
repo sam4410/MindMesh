@@ -59,7 +59,10 @@ To apply migrations in production, run:
 
 ## Exit Codes
 
-- `0`: Success (may have pending migrations, but command ran successfully)
-- `1`: Error
+- `0`: Database is up to date.
+- `1`: The database may have pending migrations, a failed migration, or divergent migration history; it can also indicate another command error.
 
-To check for pending migrations programmatically, you might need to parse the output or use `migrate diff` with exit code flags.
+Do not treat every nonzero exit code as a reason to stop deployment. Inspect the
+status output: if it reports only pending migrations, apply them with
+`prisma migrate deploy`. If it reports a failed migration or divergent history,
+stop and resolve that state before deploying. Investigate other errors separately.

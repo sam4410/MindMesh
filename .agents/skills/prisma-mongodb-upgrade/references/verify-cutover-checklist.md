@@ -37,7 +37,8 @@ the cutover observable and reversible.
    diverge.
 5. **Validator impact assessed:** Prisma 8 emits closed `$jsonSchema` validators by default;
    confirm legacy documents (extra fields, drifted shapes) pass them on the staging copy
-   before applying to production.
+   before applying to production. Test v6 writes against the validators installed by
+   `db update` too; v6 may write shapes that the new validators reject.
 6. **Storage-name addressing audited:** every ported call site uses collection storage
    names (`db.orm.users`), not model names (see `schema-contract-mapping.md`).
 7. **Transaction inventory mapped:** grep the v6 app for `$transaction`; each hit gets a
@@ -47,9 +48,11 @@ the cutover observable and reversible.
    builder, or the shared `MongoClient`).
 9. **Staged read-only soak:** run the Prisma 8 stack read-only against staging/production data
    alongside v6 and compare outputs before allowing writes.
-10. **Cutover + rollback:** switch writes to Prisma 8 only after the soak; keep the v6 branch
-    deployable as the rollback path. Rolling back is a code rollback — the data was never
-    moved.
+10. **Cutover + rollback:** before switching writes to Prisma 8, test v6 writes against the
+    strict validators installed by `db update` and document a database rollback plan for
+    reverting or relaxing those validators if needed. Keep the v6 branch deployable, but
+    do not treat a code rollback alone as sufficient: the validators remain in the database
+    and can reject v6 writes.
 
 After cutover, follow the synced `prisma-8` skill for ongoing work (see the hand-off rule
 in `SKILL.md`).

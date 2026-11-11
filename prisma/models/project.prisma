@@ -10,9 +10,12 @@ model Project {
   description    String?
   status         ProjectStatus         @default(DRAFT)
   canvasJsonPath String? // Vercel Blob URL for the canvas snapshot, set once one is saved
+  deletionPending Boolean               @default(false)
   createdAt      DateTime              @default(now())
   updatedAt      DateTime              @updatedAt
   collaborators  ProjectCollaborator[]
+  taskRuns       TaskRun[]
+  specs          ProjectSpec[]
 
   @@index([ownerId])
   @@index([createdAt])

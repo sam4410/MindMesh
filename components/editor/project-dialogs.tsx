@@ -5,13 +5,13 @@ import type { FormEvent } from "react";
 import { EditorDialog } from "@/components/editor/editor-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useProjectDialogsContext } from "@/hooks/use-project-dialogs";
+import { useProjectActionsContext } from "@/hooks/use-project-actions";
 
 const FORM_ID = "project-dialog-form";
 
 export function ProjectDialogs() {
-  const { dialog, isOpen, name, setName, slug, isLoading, canSubmit, submit, close } =
-    useProjectDialogsContext();
+  const { dialog, isOpen, name, setName, roomId, isLoading, error, canSubmit, submit, close } =
+    useProjectActionsContext();
 
   if (!dialog) return null;
 
@@ -35,13 +35,13 @@ export function ProjectDialogs() {
         id="project-name"
         value={name}
         onChange={(event) => setName(event.target.value)}
-        placeholder="e.g. Payments Platform"
+        placeholder={dialog.type === "create" ? "Untitled Project" : undefined}
         autoComplete="off"
         autoFocus
       />
       {dialog.type === "create" && (
         <p className="text-xs text-copy-muted">
-          Slug: <span className="font-mono text-copy-secondary">{slug || "—"}</span>
+          Room ID: <span className="font-mono break-all text-copy-secondary">{roomId}</span>
         </p>
       )}
     </form>
@@ -55,28 +55,36 @@ export function ProjectDialogs() {
           body: nameField,
           action: (
             <Button type="submit" form={FORM_ID} disabled={!canSubmit}>
-              Create project
+              {isLoading ? "Creating…" : "Create project"}
             </Button>
           ),
         }
       : dialog.type === "rename"
         ? {
             title: "Rename project",
-            description: `Current name: ${dialog.project.name}`,
+            description: `Current name: ${dialog.currentName}`,
             body: nameField,
             action: (
               <Button type="submit" form={FORM_ID} disabled={!canSubmit}>
-                Rename
+                {isLoading ? "Renaming…" : "Rename"}
               </Button>
             ),
           }
         : {
-            title: "Delete project",
-            description: `"${dialog.project.name}" will be permanently deleted. This can't be undone.`,
+            title: dialog.project.deletionPending ? "Retry project deletion" : "Delete project",
+            description: dialog.project.deletionPending
+              ? `Deletion of "${dialog.project.name}" was interrupted. Retry to clean up its canvas and finish deleting it.`
+              : `"${dialog.project.name}" will be permanently deleted. This can't be undone.`,
             body: null,
             action: (
               <Button variant="destructive" onClick={submit} disabled={!canSubmit}>
-                Delete project
+                {isLoading
+                  ? dialog.project.deletionPending
+                    ? "Retrying…"
+                    : "Deleting…"
+                  : dialog.project.deletionPending
+                    ? "Retry deletion"
+                    : "Delete project"}
               </Button>
             ),
           };
@@ -95,6 +103,11 @@ export function ProjectDialogs() {
       }
     >
       {config.body}
+      {error && (
+        <p role="alert" className="text-sm text-error">
+          {error}
+        </p>
+      )}
     </EditorDialog>
   );
 }

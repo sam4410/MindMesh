@@ -29,7 +29,7 @@ you need what v6 syntax cannot express, such as polymorphism.
 | (nothing) | `// use prisma-8` as the first line of `contract.prisma` | Without it, `contract emit` fails with `CONTRACT.SOURCE_LOAD_FAILED` |
 | `datasource db { provider = "mongodb" }` + `url = env(...)` ([v6 docs](https://www.prisma.io/docs/orm/overview/databases/mongodb#example)) | No provider in the contract. `prisma.config.ts` wraps `defineConfig` from `@prisma/orm-mongo/config` in `definePrismaConfig`, with `db.connection` | `prisma orm init --target mongodb` scaffolds it; point the connection at the same database v6 uses |
 | `id String @id @default(auto()) @map("_id") @db.ObjectId` ([using ObjectId](https://www.prisma.io/docs/orm/overview/databases/mongodb#using-objectid)) | `id ObjectId @id @map("_id")` | |
-| `Int`, `Float`, `Boolean`, `DateTime` | `Int32`, `Double`, `Bool`, `Date` | The v6 names still work with a `PSL_DEPRECATED_SCALAR_NAME` warning; a later release removes them |
+| `Int`, `Float`, `Boolean`, `DateTime` | `Int64Number`, `Double`, `Bool`, `Date` | `Int64Number` uses BSON long while preserving the JavaScript `number` API. The v6 names still work with a `PSL_DEPRECATED_SCALAR_NAME` warning; a later release removes them |
 | `BigInt`, `Decimal`, `Bytes`, `Json` | `Int64`, `Decimal128`, `Binary`, `Json` | `Json` holds only JSON values; type a field that holds other BSON values, such as a `Date`, as `Bson` |
 | `@default(now())`, `@updatedAt` | `temporal.createdAt()`, `temporal.updatedAt()` | |
 | Composite types: `type Address { ... }` ([composite types](https://www.prisma.io/docs/orm/prisma-client/special-fields-and-types/composite-types)) | `type Address { ... }` | Unchanged |

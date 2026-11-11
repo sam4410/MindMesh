@@ -241,8 +241,7 @@ npx prisma migrate dev  # if needed
 - Ensure `prisma generate` ran successfully
 
 ### SSL certificate errors
-- Add `ssl: { rejectUnauthorized: false }` to the adapter config if you need to preserve old behavior
-- Or configure your certificates properly with `NODE_EXTRA_CA_CERTS` / OpenSSL CA settings
+- Keep certificate verification enabled. Configure the correct CA certificate with `NODE_EXTRA_CA_CERTS`, the driver's CA options, or your system's trusted CA store; do not disable verification with `rejectUnauthorized: false`.
 
 ### Connection timeout issues
 - Driver adapters use the underlying driver's defaults, which differ from v6

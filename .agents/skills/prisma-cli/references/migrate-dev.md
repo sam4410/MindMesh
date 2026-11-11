@@ -126,7 +126,16 @@ When a migration would cause data loss:
 ```bash
 prisma migrate dev --name remove_field
 # Warning: You are about to delete data...
-# Accept with: --accept-data-loss
+# Review the warning and confirm interactively only if the data loss is intended.
+```
+
+To inspect the generated migration before applying it, create it without
+applying and review the SQL:
+
+```bash
+prisma migrate dev --name remove_field --create-only
+# Review prisma/migrations/<timestamp>_remove_field/migration.sql, then apply with:
+prisma migrate dev
 ```
 
 ## Shadow Database

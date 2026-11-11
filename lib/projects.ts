@@ -1,22 +1,33 @@
-export interface Project {
+import { prisma } from "@/lib/prisma";
+
+export interface ProjectSummary {
   id: string;
   name: string;
-  slug: string;
-  isOwner: boolean;
+  deletionPending: boolean;
 }
 
-// shortcut: mock data until the projects API exists (Feature 04 forbids API calls and persistence).
-export const mockProjects: Project[] = [
-  { id: "p1", name: "Payments Platform", slug: "payments-platform", isOwner: true },
-  { id: "p2", name: "Realtime Chat", slug: "realtime-chat", isOwner: true },
-  { id: "p3", name: "Media Pipeline", slug: "media-pipeline", isOwner: false },
-];
+const summary = { id: true, name: true, deletionPending: true } as const;
 
-export function toSlug(name: string) {
-  return name
-    .normalize("NFKD")
-    .replace(/[̀-ͯ]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
+// Projects the user owns, plus projects shared with their email as a collaborator.
+// The email must already be lowercased (getCurrentIdentity does this).
+export async function getProjectsForUser(userId: string, email: string | undefined) {
+  const [owned, shared] = await Promise.all([
+    prisma.project.findMany({
+      where: { ownerId: userId },
+      orderBy: { createdAt: "desc" },
+      select: summary,
+    }),
+    email
+      ? prisma.project.findMany({
+          where: {
+            ownerId: { not: userId },
+            deletionPending: false,
+            collaborators: { some: { email } },
+          },
+          orderBy: { createdAt: "desc" },
+          select: summary,
+        })
+      : [],
+  ]);
+  return { owned, shared };
 }

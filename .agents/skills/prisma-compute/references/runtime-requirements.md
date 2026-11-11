@@ -89,10 +89,17 @@ The caller gets a `504` after 60 seconds, and the instance can sleep while the w
 ```ts
 app.post("/webhook", async (c) => {
   const job = await c.req.json();
+  // Persist to a durable database or queue; fail the request if this fails.
+  await persistJob(job);
   waitUntil(processForTwoMinutes(job), { signal: AbortSignal.timeout(5 * 60_000) });
   return c.body(null, 202);
 });
 ```
+
+`persistJob` represents your durable storage operation. Acknowledge the webhook
+only after it succeeds; `waitUntil` schedules the existing in-process work but
+does not make it durable. A worker or recovery process should be able to resume
+persisted jobs if the instance stops before processing finishes.
 
 ## References
 

@@ -8,6 +8,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { cn } from "@/lib/utils";
 
 // Shared shell for editor dialogs: applies the ui-context modal styling without touching components/ui.
 interface EditorDialogProps extends Pick<ComponentProps<typeof Dialog>, "open" | "onOpenChange"> {
@@ -15,6 +16,8 @@ interface EditorDialogProps extends Pick<ComponentProps<typeof Dialog>, "open" |
   description?: string;
   footer?: ReactNode;
   children?: ReactNode;
+  // Overrides the default width (sm:max-w-md), e.g. for wider content like a card grid.
+  className?: string;
 }
 
 export function EditorDialog({
@@ -24,10 +27,16 @@ export function EditorDialog({
   description,
   footer,
   children,
+  className,
 }: EditorDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="gap-5 rounded-3xl border border-surface-border bg-elevated p-6 ring-0 sm:max-w-md">
+      <DialogContent
+        className={cn(
+          "gap-5 rounded-3xl border border-surface-border bg-elevated p-6 ring-0 sm:max-w-md",
+          className
+        )}
+      >
         <DialogHeader>
           <DialogTitle className="text-copy-primary">{title}</DialogTitle>
           {description && (

@@ -10,14 +10,25 @@ if (!signInUrl || !signUpUrl) {
 
 const publicPaths = [signInUrl, signUpUrl];
 
-function isPublicPath(pathname: string) {
-  return publicPaths.some((path) => pathname === path || pathname.startsWith(`${path}/`));
+function isPublicPath(pathname: string, requestUrl: URL) {
+  return publicPaths.some((path) => {
+    const publicPath = new URL(path, requestUrl).pathname;
+    return pathname === publicPath || pathname.startsWith(`${publicPath}/`);
+  });
 }
 
 export default clerkMiddleware(async (auth, req) => {
-  if (!isPublicPath(req.nextUrl.pathname)) {
-    await auth.protect();
+  const { pathname } = req.nextUrl;
+  if (isPublicPath(pathname, req.nextUrl)) return;
+
+  // auth.protect() answers signed-out API calls with 404; APIs need a proper 401.
+  if (pathname === "/api" || pathname.startsWith("/api/")) {
+    const { userId } = await auth();
+    if (!userId) return Response.json({ error: "Unauthorized" }, { status: 401 });
+    return;
   }
+
+  await auth.protect();
 });
 
 export const config = {

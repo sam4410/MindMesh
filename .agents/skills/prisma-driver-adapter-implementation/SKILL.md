@@ -153,7 +153,17 @@ async startTransaction(level?: IsolationLevel): Promise<Transaction> {
 
 ### Commit and rollback
 
-Prisma coordinates the SQL `COMMIT`/`ROLLBACK` through `executeRaw`. The transaction object's `commit()` and `rollback()` methods are lifecycle hooks: detach listeners and release the dedicated connection exactly once. They must not issue a second SQL commit/rollback.
+Transaction finalization depends on `usePhantomQuery`:
+
+- For SQL-managed transactions (`usePhantomQuery: false`), Prisma sends SQL
+  `COMMIT`/`ROLLBACK` through `executeRaw`. The transaction object's
+  `commit()` and `rollback()` methods are lifecycle hooks that clean up
+  listeners and release the dedicated connection exactly once; they must not
+  issue a second SQL commit/rollback.
+- For phantom-query transactions (`usePhantomQuery: true`), Prisma does not
+  send those SQL statements through `executeRaw`. The adapter's `commit()` and
+  `rollback()` methods must finalize the transaction themselves, in addition
+  to any required cleanup.
 
 ```typescript
 class ExampleTransaction extends ExampleQueryable implements Transaction {
