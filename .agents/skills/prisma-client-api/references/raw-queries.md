@@ -165,8 +165,21 @@ const posts = await prisma.$queryRaw`
 
 ```typescript
 await prisma.$transaction(async (tx) => {
-  await tx.$executeRaw`UPDATE "Account" SET balance = balance - ${amount} WHERE id = ${senderId}`
-  await tx.$executeRaw`UPDATE "Account" SET balance = balance + ${amount} WHERE id = ${recipientId}`
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw new Error("Transfer amount must be a positive finite number")
+  }
+
+  const debited = await tx.$executeRaw`
+    UPDATE "Account" SET balance = balance - ${amount}
+    WHERE id = ${senderId} AND balance >= ${amount}
+  `
+  if (debited !== 1) throw new Error("Sender not found or has insufficient funds")
+
+  const credited = await tx.$executeRaw`
+    UPDATE "Account" SET balance = balance + ${amount}
+    WHERE id = ${recipientId}
+  `
+  if (credited !== 1) throw new Error("Recipient not found")
 })
 ```
 

@@ -114,6 +114,22 @@ Update this file whenever the current phase, active feature, or implementation s
 - Spec list 500 in the browser (2026-11-09): "TypeError: Cannot read properties of undefined (reading 'findMany')" on prisma.projectSpec. The `npm run dev` server had started before the ProjectSpec model was added, and lib/prisma.ts caches the PrismaClient on globalThis in development, so hot reload kept the old client. Fixed by restarting the dev server, with no code change. Any running dev server needs a restart after a Prisma schema change.
 - Edge labels clipped between close nodes (2026-11-09, from browser testing): labels were a single unwrappable line (whitespace-pre) centered between the nodes, so a label wider than the gap between side-by-side nodes ran under both of them ("Read and Write Profiles", "Consume Order"). components/editor/canvas-edge.tsx: when both handles are left/right, the label's max width is the horizontal gap between them (|targetX − sourceX|) minus 8px, never below 72px, and it wraps (whitespace-pre-line, break-words, centered, w-max, leading-snug, rounded-xl since it can be multi-line). Vertical edges and labels that fit are unchanged, and so is the editing input. TypeScript and ESLint clean; not checked visually in the browser.
 - AI layout columns widened (2026-11-09, the user's request): lib/design-actions.ts GRID.column changed from 240 to 280 (rows stay 160). The agent's system prompt, placeInCell and cellOf all read GRID, so new AI designs leave about 120px between rectangles in neighbouring columns (was 80) and about 140px from a rectangle to a cylinder (was 100), so most edge labels stay on one line. Starter templates and user-drawn layouts are unchanged. On canvases built with the old spacing, the agent maps existing nodes to cells by their center at 280px, so it may see them one column off; it places new nodes around them without overlap. TypeScript and ESLint clean; no new AI run.
+- Product renamed from Ghost AI to MindMesh (2026-11-10, the user's request). Earlier tracker entries keep "Ghost AI" as history.
+  - User-facing:
+    - The sign-in/up panel: logo badge "G" → "M", the name, the tagline and the © line.
+    - AI sidebar copy: "Collaborate with MindMesh", "Design with MindMesh", "MindMesh is working…" (status strip, placeholder, aria-label).
+    - The AI's presence and chat display name in lib/ai-status.ts (AI_AGENT.info.name), which labels its cursor, avatar and messages.
+    - Both system prompts ("You are MindMesh, …").
+    - The browser tab title and description in app/layout.tsx, previously the create-next-app defaults.
+  - Also renamed: the package name mindmesh (package.json and package-lock.json), a MindMesh heading and one-line description at the top of README.md (replacing a stray "# ghost-ai2" at the end), context/project-overview.md, the Feature 20 spec's subtitle, and a code comment.
+  - The AI display name is plain "MindMesh", the literal rename; the user didn't choose between that and "MindMesh AI" when asked.
+  - Kept on purpose:
+    - AI_AGENT.id "ghost-ai", which earlier AI chat messages are stored under, now commented.
+    - The internal drag type application/x-ghost-shape.
+    - The local database name ghost_ai.
+    - The ghost button variant and "ghost preview" wording, which aren't the product name.
+  - AI messages already posted in a room's chat keep the sender name "Ghost AI", since the name is stored with each message.
+  - npm run build (TypeScript included) and ESLint clean; not checked in the browser.
 
 ## In Progress
 
@@ -160,6 +176,6 @@ Update this file whenever the current phase, active feature, or implementation s
 - BLOB_READ_WRITE_TOKEN must be set in .env.local for canvas save/load. The Vercel Blob store is private, so code must use access: "private" (public access is rejected by this store).
 - TRIGGER_SECRET_KEY (tr_dev_…) must be set in .env.local to start tasks from the app. `trigger dev` uses the CLI login instead. Production needs its own key.
 - TRIGGER_PROJECT_REF must be set in .env.local too (not secret). `trigger dev` and `trigger deploy` read it from env files in the current directory, so run them from build-saas-app/. Other environments, such as CI, must set it themselves.
-- The design agent reads `OPENAI_API_KEY`; `trigger dev` passes `.env.local` to the worker only when it starts, so restart it after changing keys. Deployed design tasks need `OPENAI_API_KEY` and `LIVEBLOCKS_SECRET_KEY` set in the Trigger.dev dashboard. Configure `GOOGLE_GENERATIVE_AI_API_KEY` only if Gemini is later added.
-- @trigger.dev/build isn't installed because no build extensions are used yet. Add it at the same version when a task needs one, such as prismaExtension for Prisma in tasks.
+- The design agent reads `OPENAI_API_KEY`; `trigger dev` passes `.env.local` to the worker only when it starts, so restart it after changing keys. Deployed design tasks need `OPENAI_API_KEY` and `LIVEBLOCKS_SECRET_KEY` set in the Trigger.dev dashboard. Deployed `generate-spec` tasks additionally need `GOOGLE_GENERATIVE_AI_API_KEY`, `DATABASE_URL`, and `BLOB_READ_WRITE_TOKEN`.
+- The generated Prisma client at `app/generated/prisma` is gitignored. `generate-spec` imports it through `lib/prisma.ts`, but this repo has no Trigger.dev Prisma build extension or configured pre-build generation. Its availability in deployed tasks is therefore not verified or guaranteed; a successful `trigger dev` run does not establish deployment behavior. Before deploying, configure the Prisma 7 `prismaExtension` in modern mode and ensure `npx prisma generate` runs before the Trigger.dev build, following the installed Trigger.dev extension guidance.
 - .env.local lives in build-saas-app/ (Next.js only loads env files from the project root). It holds NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY, CLERK_SECRET_KEY, NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in, NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up. proxy.ts throws at startup if the sign-in/sign-up URLs are missing.

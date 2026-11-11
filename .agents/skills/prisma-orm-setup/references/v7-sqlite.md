@@ -42,16 +42,19 @@ export default defineConfig({
 In `.env`:
 
 ```env
-DATABASE_URL="file:./dev.db"
+DATABASE_URL="file:/absolute/path/to/dev.db"
 ```
 
 ### Connection String Format
 
 ```
-file:PATH
+file:/absolute/path/to/database.db
 ```
 
-- **PATH**: Relative path to the database file. Check `prisma.config.ts` if you need to confirm how your app resolves it.
+Use an absolute file path so Prisma CLI and the application adapter resolve
+the same SQLite database regardless of their working directories. On Windows,
+use the absolute path syntax supported by your SQLite URL, for example
+`file:///C:/path/to/dev.db`.
 
 ## Driver Adapter
 
@@ -69,6 +72,7 @@ Use a driver adapter for the standard SQL workflow.
    import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
 
    const adapter = new PrismaBetterSqlite3({
+     // Reuse the same absolute URL configured for Prisma CLI.
      url: process.env.DATABASE_URL!,
    })
 

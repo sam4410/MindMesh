@@ -26,10 +26,11 @@ sources:
 # Authoring a chat agent
 
 A `chat.agent` runs an entire conversation as one long-lived Trigger.dev task. It wakes when a
-message arrives, freezes when none do, and in-memory state survives page refreshes, deploys, idle
-gaps, and crashes. Your code is the loop you would write anyway: messages in, `streamText` out.
-There are no API routes. The frontend talks to the agent through a `TriggerChatTransport`, so
-history accumulates server-side and the client ships only the new message each turn.
+message arrives and freezes when none do. Conversation history is managed server-side, but ordinary
+in-memory variables are process-local: a replacement worker may not retain them after a crash.
+Store any state that must survive recovery in persistent storage. Your code is the loop you would
+write anyway: messages in, `streamText` out. There are no API routes. The frontend talks to the
+agent through a `TriggerChatTransport`, so the client ships only the new message each turn.
 
 Works with Vercel AI SDK v5, v6, or v7. On v7 also install `@ai-sdk/otel` so model calls are traced
 (the SDK registers it for you).

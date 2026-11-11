@@ -26,7 +26,7 @@ export async function GET(_req: Request, ctx: Context) {
     {
       specs: specs.map((spec) => ({
         id: spec.id,
-        filename: specFilename(project.name, spec.createdAt),
+        filename: specFilename(project.name, spec.createdAt, spec.id),
         createdAt: spec.createdAt.toISOString(),
       })),
     },

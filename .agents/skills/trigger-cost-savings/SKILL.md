@@ -81,7 +81,7 @@ Present a prioritized report with estimated impact:
 
 ### Medium impact
 2. **Debounce `sync-user-data`** — 847 runs/day, often bursty.
-   `debounce: { key: \`user-${userId}\`, delay: "5s" }`
+   `debounce: { key: \`user-${userId}\`, delay: "5s", mode: "trailing" }`
 
 ### Low impact / best practice
 3. **Add `maxDuration` to `generate-report`** — no timeout configured.

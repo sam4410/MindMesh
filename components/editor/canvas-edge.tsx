@@ -63,6 +63,7 @@ export function CanvasEdgeView({
   }
 
   function startEditing() {
+    if (editStatus.current === "editing") return;
     editStatus.current = "editing";
     setDraft(label);
   }

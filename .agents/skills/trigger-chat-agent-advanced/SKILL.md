@@ -284,7 +284,7 @@ const userContext = chat.local<{ name: string; plan: "free" | "pro" }>({ id: "us
 export const myChat = chat.agent({
   id: "my-chat",
   onBoot: async ({ clientData }) => userContext.init({ name: "Alice", plan: "pro" }),
-  run: async ({ messages, signal }) => streamText({ /* ... */ }),
+  run: async ({ messages, signal, streamText }) => streamText({ messages, abortSignal: signal }),
 });
 ```
 

@@ -2,8 +2,9 @@ import type { TaskStatusMessage } from "@/types/tasks";
 
 // How the design agent appears in presence; the color is --accent-ai-text from ui-context.md.
 export const AI_AGENT = {
+  // Kept from the old product name: earlier AI chat messages are stored under this ID.
   id: "ghost-ai",
-  info: { name: "Ghost AI", avatar: "", color: "#8b82ff" },
+  info: { name: "MindMesh", avatar: "", color: "#8b82ff" },
 } as const;
 
 // The parts of a Trigger.dev realtime run that decide the final chat message.

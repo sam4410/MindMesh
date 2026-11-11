@@ -1,12 +1,13 @@
 {
-  "name": "ghost-ai",
+  "name": "mindmesh",
   "version": "0.1.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "postinstall": "prisma generate"
   },
   "dependencies": {
     "@ai-sdk/google": "^4.0.112",
@@ -43,6 +44,7 @@
   },
   "devDependencies": {
     "@tailwindcss/turbopack": "^4",
+    "@trigger.dev/build": "4.8.3",
     "@types/node": "^20",
     "@types/pg": "^8.23.1",
     "@types/react": "^19",

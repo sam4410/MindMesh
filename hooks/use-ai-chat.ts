@@ -10,7 +10,7 @@ export interface ChatEntry extends ChatMessage {
   id: string;
 }
 
-// "assistant" posts as Ghost AI: the browser that started a design run reports its outcome.
+// "assistant" posts as MindMesh: the browser that started a design run reports its outcome.
 export type SendChatMessage = (content: string, role?: ChatMessage["role"]) => Promise<void>;
 
 // The AI sidebar lives in EditorShell, outside the Liveblocks room, so the canvas hands it the

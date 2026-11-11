@@ -84,7 +84,7 @@ export function AiSidebar({
         </span>
         <div className="min-w-0 flex-1">
           <h2 className="text-sm font-medium text-copy-primary">AI Workspace</h2>
-          <p className="text-xs text-copy-muted">Collaborate with Ghost AI</p>
+          <p className="text-xs text-copy-muted">Collaborate with MindMesh</p>
         </div>
         <Button variant="ghost" size="icon-sm" onClick={onClose} aria-label="Close AI sidebar">
           <X />
@@ -127,7 +127,7 @@ export function AiSidebar({
 function StatusStrip({ latest }: { latest: TaskStatusMessage | null }) {
   // The newest message may still be the previous run's "completed" until this run reports in.
   const isCurrent = latest?.status === "started" || latest?.status === "processing";
-  const text = isCurrent && latest.text ? latest.text : "Ghost AI is working…";
+  const text = isCurrent && latest.text ? latest.text : "MindMesh is working…";
   return (
     <div className="px-3 pt-2">
       <div
@@ -178,8 +178,9 @@ function ArchitectTab({ projectId, messages, onSend, activity }: ArchitectTabPro
     skipColumns: ["payload"],
     onComplete: (run, err) => {
       const message = designRunMessage(run, err, latestStatus.current);
-      if (!message || !run || finishedRunId.current === run.id) return;
-      finishedRunId.current = run.id;
+      if (!message) return;
+      if (run && finishedRunId.current === run.id) return;
+      if (run) finishedRunId.current = run.id;
       // Everyone in the room sees the outcome in ai-chat; the canvas already updated through Liveblocks.
       void onSend(message, "assistant").catch((sendErr: unknown) => console.error(sendErr));
       setActiveRun(null);
@@ -260,7 +261,7 @@ function ArchitectTab({ projectId, messages, onSend, activity }: ArchitectTabPro
               <Bot className="h-6 w-6 text-ai-text" />
             </span>
             <div className="space-y-1">
-              <p className="text-sm font-medium text-copy-primary">Design with Ghost AI</p>
+              <p className="text-sm font-medium text-copy-primary">Design with MindMesh</p>
               <p className="text-xs text-copy-muted">
                 Describe a system and the architect will help you sketch it on the canvas.
               </p>
@@ -328,7 +329,7 @@ function ArchitectTab({ projectId, messages, onSend, activity }: ArchitectTabPro
           onKeyDown={handleKeyDown}
           disabled={isRunActive}
           maxLength={CHAT_MESSAGE_MAX_LENGTH}
-          placeholder={isRunActive ? "Ghost AI is working…" : "Ask the AI architect…"}
+          placeholder={isRunActive ? "MindMesh is working…" : "Ask the AI architect…"}
           aria-label="Message the AI architect"
           className="max-h-40 min-h-18 resize-none overflow-y-auto rounded-xl bg-elevated text-copy-primary placeholder:text-copy-faint dark:bg-elevated"
         />
@@ -336,7 +337,7 @@ function ArchitectTab({ projectId, messages, onSend, activity }: ArchitectTabPro
           type="submit"
           size="icon"
           disabled={!draft.trim() || isBusy}
-          aria-label={isBusy ? "Ghost AI is working" : "Send message"}
+          aria-label={isBusy ? "MindMesh is working" : "Send message"}
           aria-busy={isBusy}
           className="rounded-xl bg-accent-green text-(color:--bg-base) hover:bg-accent-green/90"
         >

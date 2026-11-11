@@ -73,10 +73,21 @@ Use a driver adapter for the standard SQL workflow.
    import 'dotenv/config'
    import { PrismaClient } from '../generated/client'
    import { PrismaPg } from '@prisma/adapter-pg'
+   import { Pool } from 'pg'
 
-   const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL })
+   const connectionString = process.env.DATABASE_URL!
+   const schema = new URL(connectionString).searchParams.get('schema') ?? 'public'
+   // Keep schema a trusted PostgreSQL identifier before using it in connection options.
+   const pool = new Pool({
+     connectionString,
+     options: `-c search_path=${schema}`,
+   })
+   const adapter = new PrismaPg(pool, { schema })
    const prisma = new PrismaClient({ adapter })
    ```
+
+   `PrismaPg`'s `schema` option applies the schema to generated queries. The
+   connection `search_path` keeps unqualified raw SQL in the same schema.
 
 ## Common Issues
 

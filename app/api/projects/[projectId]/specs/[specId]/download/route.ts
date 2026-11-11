@@ -18,7 +18,7 @@ export async function GET(_req: Request, ctx: Context) {
   // Looked up within the project, so another project's spec ID can't be used here.
   const spec = await prisma.projectSpec.findFirst({
     where: { id: specId, projectId },
-    select: { filePath: true, createdAt: true },
+    select: { id: true, filePath: true, createdAt: true },
   });
   if (!spec) return Response.json({ error: "Spec not found" }, { status: 404 });
 
@@ -29,7 +29,7 @@ export async function GET(_req: Request, ctx: Context) {
     return new Response(blob.stream, {
       headers: {
         "content-type": "text/markdown; charset=utf-8",
-        "content-disposition": `attachment; filename="${specFilename(project.name, spec.createdAt)}"`,
+        "content-disposition": `attachment; filename="${specFilename(project.name, spec.createdAt, spec.id)}"`,
         "cache-control": "private, no-store",
         "x-content-type-options": "nosniff",
       },

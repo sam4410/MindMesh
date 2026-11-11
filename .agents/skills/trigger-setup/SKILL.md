@@ -44,11 +44,12 @@ access. In an agent session, start a resumable login instead of blocking on the 
 npx trigger.dev@latest login --email user@example.com --name "Alex Smith" --no-browser --no-wait
 ```
 
-Give the printed URL to the user and ask them to complete sign-in and authorization.
-After they confirm, resume the saved authorization:
+Give the printed URL to the user and ask them to complete sign-in and authorization. Then
+ask them to provide the authorization code shown in the browser, and resume the saved login
+with that code:
 
 ```bash
-npx trigger.dev@latest login --no-browser
+npx trigger.dev@latest login --no-browser --code <authorization-code>
 ```
 
 Do not create accounts or approve CLI access on the user's behalf. Once authenticated,
@@ -184,7 +185,8 @@ See the manual setup docs for full Turborepo examples before scaffolding either.
    the user, but the CLI authorization itself is resumable.
    - Wrong: spawning `trigger login` and polling indefinitely in an agent session.
    - Correct: run `trigger login --email <email> --name <full-name> --no-browser --no-wait`,
-     give the URL to the user, then resume with `trigger login --no-browser` after they approve.
+     give the URL to the user, ask them for the authorization code shown after approval, then
+     resume with `trigger login --no-browser --code <authorization-code>`.
 
 2. **Mismatched CLI and SDK versions.** A `trigger.dev` CLI on a different major than
    `@trigger.dev/sdk` breaks dev/deploy.

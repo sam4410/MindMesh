@@ -47,6 +47,8 @@ export const designPlanSchema = z.object({
         label: z.string().nullable().describe("null keeps the current label"),
         shape: shape.nullable().describe("null keeps the current shape"),
         color: color.nullable().describe("null keeps the current color"),
+        width: z.number().nullable().describe("explicit width for a shape change, or null for the shape default"),
+        height: z.number().nullable().describe("explicit height for a shape change, or null for the shape default"),
       }),
       z.object({ type: z.literal("deleteNode"), id }),
       z.object({
@@ -209,12 +211,22 @@ export function applyDesignAction(
     case "updateNodeData": {
       const node = flow.getNode(resolve(action.id));
       if (!node) return null;
+      let updatedBox: Box | null = null;
+      if (action.shape != null && action.shape !== node.data.shape) {
+        const defaultSize = SHAPE_SIZES[action.shape];
+        const size = {
+          width: clamp(action.width ?? defaultSize.width, MIN_NODE_SIZE.width, MAX_NODE_SIZE.width),
+          height: clamp(action.height ?? defaultSize.height, MIN_NODE_SIZE.height, MAX_NODE_SIZE.height),
+        };
+        flow.updateNode(node.id, size);
+        updatedBox = { ...node.position, ...size };
+      }
       flow.updateNodeData(node.id, {
         ...(action.label != null && { label: cleanLabel(action.label) }),
         ...(action.shape && { shape: action.shape }),
         ...(action.color && colorPair(action.color)),
       });
-      return centerOf(boxOf(node));
+      return centerOf(updatedBox ?? boxOf(node));
     }
     case "deleteNode": {
       const node = flow.getNode(resolve(action.id));

@@ -14,7 +14,7 @@ const MODEL_ID = "gemini-3.5-flash";
 // A full spec is a long answer, so this allows more time than a design plan.
 const SPEC_TIMEOUT_MS = 180_000;
 
-const SYSTEM_PROMPT = `You are Ghost AI, a senior system architect. Write the technical specification for a system a team designed on a shared canvas, using the canvas graph and the team's chat.
+const SYSTEM_PROMPT = `You are MindMesh, a senior system architect. Write the technical specification for a system a team designed on a shared canvas, using the canvas graph and the team's chat.
 
 Use this structure:
 # <System name> Technical Specification

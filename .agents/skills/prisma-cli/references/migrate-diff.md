@@ -78,6 +78,7 @@ prisma migrate diff \
 Compare empty state to current schema:
 
 ```bash
+mkdir -p prisma/migrations/0_init
 prisma migrate diff \
   --from-empty \
   --to-schema ./prisma/schema.prisma \
