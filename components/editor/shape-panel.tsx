@@ -6,6 +6,7 @@ import {
   Hexagon,
   Pill,
   RectangleHorizontal,
+  SquareDashed,
   type LucideIcon,
 } from "lucide-react";
 import { useRef } from "react";
@@ -22,7 +23,11 @@ const SHAPE_ICONS: Record<NodeShape, LucideIcon> = {
   pill: Pill,
   cylinder: Cylinder,
   hexagon: Hexagon,
+  boundary: SquareDashed,
 };
+
+// Shown in the button's tooltip and accessible name; shapes default to their own name.
+const SHAPE_LABELS: Partial<Record<NodeShape, string>> = { boundary: "Boundary" };
 
 // Rendered inside <ReactFlow>, so React Flow's Panel pins it to the bottom-center of the canvas.
 export function ShapePanel({ onCreateShape }: { onCreateShape: (shape: NodeShape) => void }) {
@@ -38,6 +43,7 @@ export function ShapePanel({ onCreateShape }: { onCreateShape: (shape: NodeShape
     >
       {NODE_SHAPES.map((shape) => {
         const Icon = SHAPE_ICONS[shape];
+        const label = SHAPE_LABELS[shape] ?? shape;
         return (
           <Button
             key={shape}
@@ -55,8 +61,12 @@ export function ShapePanel({ onCreateShape }: { onCreateShape: (shape: NodeShape
                 event.dataTransfer.setDragImage(preview, preview.offsetWidth / 2, preview.offsetHeight / 2);
               }
             }}
-            title={`Click to add a ${shape} at the canvas center, or drag it onto the canvas`}
-            aria-label={`${shape} shape`}
+            title={
+              shape === "boundary"
+                ? "Click to add a boundary at the canvas center, or drag it onto the canvas to group components"
+                : `Click to add a ${shape} at the canvas center, or drag it onto the canvas`
+            }
+            aria-label={shape === "boundary" ? label : `${label} shape`}
             className="cursor-grab rounded-full text-copy-muted hover:text-copy-primary active:cursor-grabbing"
           >
             <Icon className="h-4 w-4" />

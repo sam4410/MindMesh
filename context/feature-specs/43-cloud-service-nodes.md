@@ -13,8 +13,8 @@ Attach a cloud service to canvas nodes, so a node knows it is "Azure Cosmos DB" 
    - keep it optional: user-drawn nodes and templates without it must keep working (architecture invariant 5)
 
 3. Let the AI set it.
-   - in `lib/design-actions.ts` add `service: z.enum(CLOUD_SERVICE_IDS).nullable()` to the `addNode` and `updateNodeData` actions (nullable, not optional, for the OpenAI strict schema)
-   - `applyDesignAction` writes `service` into node data when it isn't null
+   - in `lib/design-actions.ts` add a nullable `service` field to the `addNode` and `updateNodeData` actions (nullable, not optional, for the OpenAI strict schema); accept managed-service IDs and the explicit `"clear"` value
+   - for `addNode`, null or `"clear"` means no managed service; for `updateNodeData`, null keeps the current service, an ID selects that service, and `"clear"` removes the node's `service` property
    - in `lib/design-context-prompts.ts`, when a cloud provider is set, add: "Set `service` on each node that maps to a managed service, using an ID from the catalog."
    - pass the catalog IDs for the chosen provider into the rules block, so the model picks from a short list
 

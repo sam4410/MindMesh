@@ -20,10 +20,14 @@ export const SHAPE_SIZES: Record<NodeShape, ShapeSize> = {
   pill: { width: 160, height: 64 },
   cylinder: { width: 120, height: 100 },
   hexagon: { width: 140, height: 100 },
+  // Big enough to drop a few components inside.
+  boundary: { width: 480, height: 320 },
 };
 
 // Smallest size a node can be resized to; still fits a short label.
 export const MIN_NODE_SIZE: ShapeSize = { width: 60, height: 40 };
+// Boundaries can grow to wrap large groups; other shapes have no manual resize limit.
+export const MAX_BOUNDARY_SIZE: ShapeSize = { width: 2400, height: 1600 };
 
 export function shapeDragPayload(shape: NodeShape): ShapeDragPayload {
   return { shape, ...SHAPE_SIZES[shape] };

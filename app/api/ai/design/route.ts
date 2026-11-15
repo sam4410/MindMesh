@@ -11,6 +11,7 @@ interface DesignBody {
   prompt?: unknown;
   roomId?: unknown;
   projectId?: unknown;
+  research?: unknown;
 }
 
 // Starts a design run for a project and records who started it.
@@ -19,7 +20,10 @@ export async function POST(req: Request) {
   if (!identity) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
   const body: DesignBody | null = await req.json().catch(() => null);
-  const { prompt, roomId, projectId } = body ?? {};
+  const { prompt, roomId, projectId, research } = body ?? {};
+  if (research !== undefined && typeof research !== "boolean") {
+    return Response.json({ error: "research must be a boolean" }, { status: 400 });
+  }
 
   const trimmedPrompt = typeof prompt === "string" ? prompt.trim() : "";
   if (!trimmedPrompt) return Response.json({ error: "prompt is required" }, { status: 400 });
@@ -47,6 +51,8 @@ export async function POST(req: Request) {
       roomId,
       // From the project record on the server, never from the request body.
       designContext: getDesignContext(project),
+      // Look up official best practices before designing (spec 70); off unless asked for.
+      research: research === true,
     }));
   } catch (err) {
     console.error("Failed to start design task", err);

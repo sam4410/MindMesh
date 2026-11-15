@@ -1,8 +1,12 @@
 import { MarkerType, type Edge, type Node } from "@xyflow/react";
 
 // Shapes listed in ui-context.md; rendering for each lands with the custom node feature.
-export const NODE_SHAPES = ["rectangle", "diamond", "circle", "pill", "cylinder", "hexagon"] as const;
+// "boundary" is a dashed group outline drawn behind other nodes (spec 68), not a component.
+export const NODE_SHAPES = ["rectangle", "diamond", "circle", "pill", "cylinder", "hexagon", "boundary"] as const;
 export type NodeShape = (typeof NODE_SHAPES)[number];
+
+// Boundaries sit below nodes and edges (React Flow zIndex; Liveblocks syncs it like other node fields).
+export const BOUNDARY_Z_INDEX = -1;
 
 export interface NodeColor {
   name: string;

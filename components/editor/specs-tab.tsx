@@ -7,6 +7,7 @@ import Markdown, { type Components, type ExtraProps } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import { EditorDialog } from "@/components/editor/editor-dialog";
+import { RunPoller } from "@/components/editor/run-poller";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { ChatEntry } from "@/hooks/use-ai-chat";
@@ -58,26 +59,29 @@ export function SpecsTab({ projectId, isActive, chatMessages, getCanvas }: Specs
   const finishedRunId = useRef<string | null>(null);
   const isGenerating = isStarting || activeRun !== null;
 
+  // Called by the realtime subscription and by the polling fallback; each run is handled once.
+  const finishRun = (run: { id: string; isCompleted: boolean; isSuccess: boolean } | undefined, err?: Error) => {
+    if (run && finishedRunId.current === run.id) return;
+    if (run) finishedRunId.current = run.id;
+    if (run?.isSuccess) {
+      setNotice(null);
+      setAttempt((n) => n + 1);
+    } else if (run?.isCompleted) {
+      setNotice("Couldn't generate the spec. Try again.");
+    } else if (err) {
+      setNotice("Lost track of the spec run. The spec will appear here when it's ready.");
+    } else {
+      return;
+    }
+    setActiveRun(null);
+  };
+
   useRealtimeRun<typeof generateSpec>(activeRun?.runId, {
     accessToken: activeRun?.publicToken,
     enabled: activeRun !== null,
     // The output is the whole spec; the list only needs to know the run finished.
     skipColumns: ["payload", "output"],
-    onComplete: (run, err) => {
-      if (run && finishedRunId.current === run.id) return;
-      if (run) finishedRunId.current = run.id;
-      if (run?.isSuccess) {
-        setNotice(null);
-        setAttempt((n) => n + 1);
-      } else if (run?.isCompleted) {
-        setNotice("Couldn't generate the spec. Try again.");
-      } else if (err) {
-        setNotice("Lost track of the spec run. The spec will appear here when it's ready.");
-      } else {
-        return;
-      }
-      setActiveRun(null);
-    },
+    onComplete: (run, err) => finishRun(run, err),
   });
 
   // Sends the live canvas and the chat to POST /api/ai/spec, then follows the run.
@@ -138,6 +142,13 @@ export function SpecsTab({ projectId, isActive, chatMessages, getCanvas }: Specs
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
+      {activeRun && (
+        <RunPoller<typeof generateSpec>
+          runId={activeRun.runId}
+          accessToken={activeRun.publicToken}
+          onComplete={finishRun}
+        />
+      )}
       <div className="flex flex-col gap-2 p-4 pb-3">
         <Button
           onClick={generate}

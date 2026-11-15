@@ -1,13 +1,15 @@
 import { z } from "zod";
 
-import { MIN_NODE_SIZE, SHAPE_SIZES, createNodeId } from "@/lib/canvas-shapes";
+import { MAX_BOUNDARY_SIZE, MIN_NODE_SIZE, SHAPE_SIZES, createNodeId } from "@/lib/canvas-shapes";
 import { CLOUD_SERVICE_IDS } from "@/lib/cloud-services";
 import {
+  BOUNDARY_Z_INDEX,
   NEW_EDGE_DEFAULTS,
   NODE_COLORS,
   NODE_SHAPES,
   type CanvasEdge,
   type CanvasNode,
+  type NodeShape,
 } from "@/types/canvas";
 
 // A left-to-right flow, one node per cell. Columns are 280px apart (wider than the starter
@@ -25,11 +27,14 @@ const COLOR_NAMES = NODE_COLORS.map((color) => color.name) as [string, ...string
 // (anyOf, not oneOf), every field required with null for "not given", and no string length rules.
 // An empty or unknown id just matches nothing and the action is skipped.
 const id = z.string();
-const shape = z.enum(NODE_SHAPES);
+// Boundaries aren't components; the agent gets a dedicated action for them in spec 69.
+const AI_SHAPES = NODE_SHAPES.filter((s) => s !== "boundary") as [NodeShape, ...NodeShape[]];
+const shape = z.enum(AI_SHAPES);
 const color = z.enum(COLOR_NAMES);
 const cell = { column: z.number().int(), row: z.number().int() };
 // Nullable, not optional, for OpenAI's strict schema.
-const service = z.enum(CLOUD_SERVICE_IDS).nullable();
+const CLEAR_SERVICE = "clear";
+const service = z.enum([CLEAR_SERVICE, ...CLOUD_SERVICE_IDS]).nullable();
 
 // What the model may ask for. Everything it returns is checked again when applied.
 export const designPlanSchema = z.object({
@@ -47,7 +52,7 @@ export const designPlanSchema = z.object({
         label: z.string(),
         shape,
         color,
-        service: service.describe("managed cloud service ID, or null for none"),
+        service: service.describe('managed cloud service ID; "clear" or null means no service'),
         ...cell,
       }),
       z.object({ type: z.literal("moveNode"), id, ...cell }),
@@ -58,7 +63,7 @@ export const designPlanSchema = z.object({
         label: z.string().nullable().describe("null keeps the current label"),
         shape: shape.nullable().describe("null keeps the current shape"),
         color: color.nullable().describe("null keeps the current color"),
-        service: service.describe("managed cloud service ID; null keeps the current service"),
+        service: service.describe('managed cloud service ID; null keeps the current service, "clear" removes it'),
         width: z.number().nullable().describe("explicit width for a shape change, or null for the shape default"),
         height: z.number().nullable().describe("explicit height for a shape change, or null for the shape default"),
       }),
@@ -70,6 +75,20 @@ export const designPlanSchema = z.object({
         label: z.string().nullable().describe("null for no label"),
       }),
       z.object({ type: z.literal("deleteEdge"), id }),
+      z.object({
+        type: z.literal("addBoundary"),
+        id,
+        label: z.string(),
+        memberIds: z.array(id).describe("ids of the nodes to enclose; at least one"),
+        color,
+      }),
+      z.object({
+        type: z.literal("updateBoundary"),
+        id,
+        label: z.string().nullable().describe("null keeps the current label"),
+        memberIds: z.array(id).nullable().describe("null keeps the current size and position"),
+        color: color.nullable().describe("null keeps the current color"),
+      }),
     ])
   ),
 });
@@ -86,6 +105,7 @@ export interface FlowLike {
   addNode(node: CanvasNode): void;
   updateNode(id: string, partial: Partial<CanvasNode>): void;
   updateNodeData(id: string, partial: Partial<CanvasNode["data"]>): void;
+  updateNodeData(id: string, updater: (data: CanvasNode["data"]) => CanvasNode["data"]): void;
   removeNode(id: string): void;
   addEdge(edge: CanvasEdge): void;
   removeEdge(id: string): void;
@@ -138,7 +158,8 @@ function placeInCell(
   size: { width: number; height: number },
   ignoreId?: string
 ): Point {
-  const others = flow.nodes.filter((node) => node.id !== ignoreId).map(boxOf);
+  // Boundaries are drawn around nodes, so they never block a cell.
+  const others = flow.nodes.filter((node) => node.id !== ignoreId && !isBoundary(node)).map(boxOf);
   let position: Point = { x: 0, y: 0 };
   // shortcut: gives up after 50 rows and accepts an overlap, fine until a column holds more nodes.
   for (let r = row; r < row + 50; r++) {
@@ -149,6 +170,33 @@ function placeInCell(
     if (!others.some((box) => overlaps({ ...position, ...size }, box))) break;
   }
   return position;
+}
+
+function isBoundary(node: CanvasNode) {
+  return node.data.shape === "boundary";
+}
+
+// Padding around the enclosed nodes, plus room above them for the boundary's label.
+const BOUNDARY_PADDING = 40;
+const BOUNDARY_LABEL_SPACE = 28;
+
+// The box that encloses the given (existing, non-boundary) nodes with padding, or null if none exist.
+function boundaryBox(flow: FlowLike, memberIds: readonly string[], resolve: (ref: string) => string): Box | null {
+  const members = memberIds
+    .map((ref) => flow.getNode(resolve(ref)))
+    .filter((node): node is CanvasNode => node !== undefined && !isBoundary(node));
+  if (members.length === 0) return null;
+  const boxes = members.map(boxOf);
+  const left = Math.min(...boxes.map((b) => b.x)) - BOUNDARY_PADDING;
+  const top = Math.min(...boxes.map((b) => b.y)) - BOUNDARY_PADDING - BOUNDARY_LABEL_SPACE;
+  const right = Math.max(...boxes.map((b) => b.x + b.width)) + BOUNDARY_PADDING;
+  const bottom = Math.max(...boxes.map((b) => b.y + b.height)) + BOUNDARY_PADDING;
+  return {
+    x: left,
+    y: top,
+    width: Math.min(right - left, MAX_BOUNDARY_SIZE.width),
+    height: Math.min(bottom - top, MAX_BOUNDARY_SIZE.height),
+  };
 }
 
 function colorPair(name: string | undefined) {
@@ -204,14 +252,15 @@ export function applyDesignAction(
           label: cleanLabel(action.label),
           shape: action.shape,
           ...colorPair(action.color),
-          ...(action.service && { service: action.service }),
+          ...(action.service && action.service !== CLEAR_SERVICE && { service: action.service }),
         },
       });
       return centerOf({ ...position, ...size });
     }
     case "moveNode": {
       const node = flow.getNode(resolve(action.id));
-      if (!node) return null;
+      // Boundaries change only through updateBoundary, which re-fits them to their members.
+      if (!node || isBoundary(node)) return null;
       const size = sizeOf(node);
       const position = placeInCell(flow, action.column, action.row, size, node.id);
       flow.updateNode(node.id, { position });
@@ -219,7 +268,7 @@ export function applyDesignAction(
     }
     case "resizeNode": {
       const node = flow.getNode(resolve(action.id));
-      if (!node) return null;
+      if (!node || isBoundary(node)) return null;
       const width = clamp(action.width, MIN_NODE_SIZE.width, MAX_NODE_SIZE.width);
       const height = clamp(action.height, MIN_NODE_SIZE.height, MAX_NODE_SIZE.height);
       flow.updateNode(node.id, { width, height });
@@ -227,7 +276,7 @@ export function applyDesignAction(
     }
     case "updateNodeData": {
       const node = flow.getNode(resolve(action.id));
-      if (!node) return null;
+      if (!node || isBoundary(node)) return null;
       let updatedBox: Box | null = null;
       if (action.shape != null && action.shape !== node.data.shape) {
         const defaultSize = SHAPE_SIZES[action.shape];
@@ -238,11 +287,17 @@ export function applyDesignAction(
         flow.updateNode(node.id, size);
         updatedBox = { ...node.position, ...size };
       }
-      flow.updateNodeData(node.id, {
-        ...(action.label != null && { label: cleanLabel(action.label) }),
-        ...(action.shape && { shape: action.shape }),
-        ...(action.color && colorPair(action.color)),
-        ...(action.service && { service: action.service }),
+      flow.updateNodeData(node.id, (data) => {
+        const updated = {
+          ...data,
+          ...(action.label != null && { label: cleanLabel(action.label) }),
+          ...(action.shape != null && { shape: action.shape }),
+          ...(action.color != null && colorPair(action.color)),
+          ...(action.service != null &&
+            action.service !== CLEAR_SERVICE && { service: action.service }),
+        };
+        if (action.service === CLEAR_SERVICE) delete updated.service;
+        return updated;
       });
       return centerOf(updatedBox ?? boxOf(node));
     }
@@ -259,7 +314,8 @@ export function applyDesignAction(
     case "addEdge": {
       const source = flow.getNode(resolve(action.source));
       const target = flow.getNode(resolve(action.target));
-      if (!source || !target || source.id === target.id) return null;
+      // Boundaries are never connected by edges.
+      if (!source || !target || source.id === target.id || isBoundary(source) || isBoundary(target)) return null;
       if (flow.edges.some((e) => e.source === source.id && e.target === target.id)) return null;
       const [from, to] = handlesFor(boxOf(source), boxOf(target));
       flow.addEdge({
@@ -281,6 +337,51 @@ export function applyDesignAction(
       flow.removeEdge(edge.id);
       const source = flow.getNode(edge.source);
       return source ? centerOf(boxOf(source)) : null;
+    }
+    case "addBoundary": {
+      if (ids.has(action.id)) return null;
+      const box = boundaryBox(flow, action.memberIds, resolve);
+      if (!box) return null;
+      const label = cleanLabel(action.label);
+      // A boundary with the same label already on the canvas is re-fitted instead of duplicated,
+      // so re-running a design keeps one "PCI scope".
+      const existing = flow.nodes.find(
+        (node) => isBoundary(node) && node.data.label.trim().toLowerCase() === label.toLowerCase()
+      );
+      if (existing) {
+        ids.set(action.id, existing.id);
+        flow.updateNode(existing.id, { position: { x: box.x, y: box.y }, width: box.width, height: box.height });
+        flow.updateNodeData(existing.id, colorPair(action.color));
+        return { x: box.x, y: box.y };
+      }
+      const nodeId = createNodeId("boundary");
+      ids.set(action.id, nodeId);
+      flow.addNode({
+        id: nodeId,
+        type: "canvasNode",
+        position: { x: box.x, y: box.y },
+        width: box.width,
+        height: box.height,
+        zIndex: BOUNDARY_Z_INDEX,
+        data: { label, shape: "boundary", ...colorPair(action.color) },
+      });
+      return { x: box.x, y: box.y };
+    }
+    case "updateBoundary": {
+      const node = flow.getNode(resolve(action.id));
+      if (!node || !isBoundary(node)) return null;
+      let box: Box = boxOf(node);
+      if (action.memberIds) {
+        const fitted = boundaryBox(flow, action.memberIds, resolve);
+        if (!fitted) return null;
+        box = fitted;
+        flow.updateNode(node.id, { position: { x: box.x, y: box.y }, width: box.width, height: box.height });
+      }
+      flow.updateNodeData(node.id, {
+        ...(action.label != null && { label: cleanLabel(action.label) }),
+        ...(action.color && colorPair(action.color)),
+      });
+      return { x: box.x, y: box.y };
     }
   }
 }

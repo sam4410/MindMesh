@@ -5,6 +5,7 @@ import { AbortTaskRunError, logger, metadata, schemaTask } from "@trigger.dev/sd
 import { del, put } from "@vercel/blob";
 import { generateText } from "ai";
 
+import { boundaryMembers } from "@/lib/boundaries";
 import { CLOUD_PROVIDER_BADGES, getCloudService } from "@/lib/cloud-services";
 import { prisma } from "@/lib/prisma";
 import { specBlobPath } from "@/lib/project-spec";
@@ -31,6 +32,7 @@ Rules:
 - The canvas is the source of truth. Cover every node and edge, and don't add components that aren't on it. Ideas from the chat that aren't on the canvas go under open questions.
 - Use component names exactly as labeled. Call an unlabeled node by its shape, like "unlabeled cylinder".
 - Mark anything you infer as an assumption.
+- Boundaries (when listed) are zones, not components: describe each one and the components inside it in the Architecture section, don't give it a Components subsection, and use them in the security and compliance discussion (for example, what is in PCI scope).
 - Output only the Markdown document: no preamble, and no code fence around it.`;
 
 export const generateSpec = schemaTask({
@@ -99,10 +101,18 @@ function describeContext({ nodes, edges, chatHistory }: GenerateSpecPayload) {
   );
   const nameOf = (id: string) => names.get(id) ?? id;
 
-  const nodeLines = nodes.map((node) => {
+  // A boundary is a group outline (spec 68), described by what it contains rather than as a component.
+  const components = nodes.filter((node) => node.data.shape !== "boundary");
+  const boundaries = nodes.filter((node) => node.data.shape === "boundary");
+
+  const nodeLines = components.map((node) => {
     const service = getCloudService(node.data.service);
     const managed = service ? `, managed service: ${CLOUD_PROVIDER_BADGES[service.provider].label} ${service.name}` : "";
     return `- ${nameOf(node.id)} (${node.data.shape}${managed})`;
+  });
+  const boundaryLines = boundaries.map((boundary) => {
+    const members = boundaryMembers(boundary, components).map((node) => nameOf(node.id));
+    return `- ${nameOf(boundary.id)}: ${members.length ? members.join(", ") : "(no components inside)"}`;
   });
   const edgeLines = edges.map((edge) => {
     const label = edge.data?.label?.trim();
@@ -113,9 +123,16 @@ function describeContext({ nodes, edges, chatHistory }: GenerateSpecPayload) {
   );
 
   return [
-    `Canvas nodes (${nodes.length}):`,
+    `Canvas nodes (${components.length}):`,
     ...nodeLines,
     "",
+    ...(boundaryLines.length
+      ? [
+          `Boundaries (${boundaryLines.length}) — groups such as security, network, or compliance zones, not components; boundary: components inside:`,
+          ...boundaryLines,
+          "",
+        ]
+      : []),
     `Canvas edges (${edges.length}), source -> target: interaction:`,
     ...(edgeLines.length ? edgeLines : ["(none)"]),
     "",

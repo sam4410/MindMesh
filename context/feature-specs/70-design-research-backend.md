@@ -18,7 +18,7 @@ Add an optional research step to the design agent: before designing, look up cur
    - `researchBestPractices({ prompt, designContext }): Promise<{ notes: string; sources: { title: string; url: string }[] } | null>`
    - Azure and AWS: connect to that cloud's MCP server, keep only the allowed read tools listed above (drop any other tool the server exposes), and always `close()` the client in a `finally`
    - everything else: `openai.tools.webSearch({ filters: { allowedDomains: [...] }, searchContextSize: "medium" })` with the allowlist `learn.microsoft.com`, `docs.aws.amazon.com`, `aws.amazon.com`, `cloud.google.com`, `docs.cloud.google.com`
-   - one `generateText` call with `model: openai("gpt-6-astra")`, those tools, `stopWhen: stepCountIs(6)`, and a 45-second `AbortSignal.timeout`
+   - one `generateText` call with `model: openai("gpt-6-astra")`, those tools, `stopWhen: stepCountIs(6)`, and a 75-second `AbortSignal.timeout` (raised from 45 s on 2026-11-16 after live calls measured 37–41 s)
    - the instructions ask for at most 10 short bullet points of concrete guidance for the requested system in this context (reference architectures, recommended services, resilience, security, data patterns), each grounded in a document it read; no design, no canvas actions
    - sources: for web search, take the URLs and titles from the result's `sources`; for MCP, collect the document URLs and titles returned by the search and read tools; keep at most 8, deduplicated
    - return `null` on timeout, MCP connection failure, or an empty result; log the reason with `logger.warn`
@@ -51,7 +51,7 @@ Add an optional research step to the design agent: before designing, look up cur
 ## Notes
 
 - New dependency: `@ai-sdk/mcp`. The Trigger.dev worker needs outbound HTTPS to `learn.microsoft.com` and `knowledge-mcp.global.api.aws`.
-- Research adds roughly 10–30 seconds and extra OpenAI usage per researched design (web search tool calls are billed per call).
+- Research adds roughly 30–60 seconds (measured 37–41 s per call on 2026-11-15) and extra OpenAI usage per researched design (web search tool calls are billed per call).
 
 ## Check When Done
 

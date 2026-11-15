@@ -44,6 +44,10 @@ const SPEC_MAX_LABEL_LENGTH = 500;
 
 const specNodeSchema = z.object({
   id: z.string().min(1),
+  // Geometry, used to work out which components sit inside a boundary.
+  position: z.object({ x: z.number(), y: z.number() }).optional(),
+  width: z.number().optional(),
+  height: z.number().optional(),
   data: z.object({
     label: z.string().max(SPEC_MAX_LABEL_LENGTH),
     shape: z.enum(NODE_SHAPES),

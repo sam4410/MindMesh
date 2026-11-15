@@ -14,11 +14,18 @@ interface DesignContextDialogProps {
   value: DesignContext;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onSaved: (value: DesignContext) => void;
 }
 
 // Edits a project's design context. Mount with a key that changes on open so the draft starts from
 // the saved value each time.
-export function DesignContextDialog({ projectId, value, open, onOpenChange }: DesignContextDialogProps) {
+export function DesignContextDialog({
+  projectId,
+  value,
+  open,
+  onOpenChange,
+  onSaved,
+}: DesignContextDialogProps) {
   const router = useRouter();
   const [draft, setDraft] = useState(value);
   const [isSaving, setIsSaving] = useState(false);
@@ -37,6 +44,7 @@ export function DesignContextDialog({ projectId, value, open, onOpenChange }: De
         const data: { error?: string } | null = await res.json().catch(() => null);
         throw new Error(data?.error ?? `Request failed (${res.status})`);
       }
+      onSaved(draft);
       onOpenChange(false);
       // Collaborators see the change after they reload; this refreshes the current user's view.
       router.refresh();

@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
-import type { NodeShape } from "@/types/canvas";
+import { DEFAULT_NODE_TEXT_COLOR, type NodeShape } from "@/types/canvas";
 
 // Shapes CSS can't draw are inline SVGs on a 100×100 box, stretched to the node size.
 // Non-scaling strokes keep the outline 1px whatever the stretch or zoom.
@@ -20,11 +20,27 @@ const SVG_SHAPES: Partial<Record<NodeShape, ReactNode>> = {
 interface ShapeGraphicProps {
   shape: NodeShape;
   color: string;
+  // Boundaries draw their dashed outline in the label color.
+  textColor?: string;
   selected?: boolean;
 }
 
 // Fills its positioned parent; shared by canvas nodes and the drag preview so both look the same.
-export function ShapeGraphic({ shape, color, selected = false }: ShapeGraphicProps) {
+export function ShapeGraphic({ shape, color, textColor = DEFAULT_NODE_TEXT_COLOR, selected = false }: ShapeGraphicProps) {
+  if (shape === "boundary") {
+    return (
+      <div
+        aria-hidden
+        // A faint tint of the node color keeps components drawn inside it readable.
+        style={{
+          backgroundColor: `color-mix(in srgb, ${color} 10%, transparent)`,
+          borderColor: selected ? undefined : textColor,
+        }}
+        className={cn("absolute inset-0 rounded-2xl border-2 border-dashed", selected && "border-brand")}
+      />
+    );
+  }
+
   const svgShape = SVG_SHAPES[shape];
 
   if (svgShape) {
