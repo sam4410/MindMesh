@@ -3,10 +3,10 @@
 Update this file whenever the current phase, active feature, or implementation state changes.
 
 ## Current Phase
-- Feature 29 (Spec UI Integration) — complete; design runs on OpenAI gpt-6-luna, spec generation on Gemini gemini-3.5-flash
+- Commercial roadmap, Phase 1 (Production readiness). Features 30–32 complete.
 
 ## Current Goal
-- Browser test of spec generation from the Specs tab, then the next feature
+- Feature 33: Organization Roles
 
 ## Completed
 
@@ -131,12 +131,112 @@ Update this file whenever the current phase, active feature, or implementation s
   - AI messages already posted in a room's chat keep the sender name "Ghost AI", since the name is stored with each message.
   - npm run build (TypeScript included) and ESLint clean; not checked in the browser.
 
+- Feature 30: Commercial Scope Context (2026-11-14) — documentation only, no code, schema or configuration changed.
+  - `project-overview.md`: billing and subscription plans, organization workspaces with owner/admin/member roles, and versioned canvas history moved into In Scope. The old out-of-scope lines for billing, enterprise permission tiers, and versioned spec history and review workflows were removed; production object storage migration and mobile-native apps stay out of scope. Added a Commercial Features section (five groups) and success criteria 7–11.
+  - `architecture-context.md`: Stripe (billing) and Sentry (monitoring) in the stack table; Blob paths `versions/{projectId}/{versionId}.json` and `iac/{projectId}/{bundleId}.zip`; projects can belong to a Clerk organization, with owner, admin, member and collaborator roles; invariants 6–9 (server-side plan limits, encrypted integration credentials, design context read from the project record, AI work stays in Trigger.dev).
+  - Roadmap section added below, listing specs 30–67 by phase.
+
+- Feature 31: Clerk Organizations (2026-11-14).
+  - Done:
+    - Organizations enabled on the Clerk development instance (`sk_test_`) through the Backend API (`instance.updateOrganizationSettings({ enabled: true })`) on 2026-11-14. Creator role is `org:admin`; Clerk's environment reports the default member role as `org:member`.
+    - `OrganizationSwitcher` in the `project-sidebar.tsx` header, above the My Projects / Shared tabs, with `hidePersonal={false}` and `afterSelectOrganizationUrl`, `afterSelectPersonalUrl` and `afterCreateOrganizationUrl` all set to `/editor`. It takes `lib/clerk-appearance.ts` from `ClerkProvider` in `app/layout.tsx`, so only width classes are passed.
+    - `Identity` in `lib/project-access.ts` gained `orgId` and `orgRole`, read from `auth()` alongside `currentUser()` inside the same `cache()`.
+    - Settings recorded in `architecture-context.md`.
+    - ESLint and `npm run build` clean.
+    - Personal accounts: enabling Organizations defaulted to "Membership required", which the Backend API can't change. The user switched it in the Clerk dashboard (Configure → Organizations → Settings → "Membership optional"). Clerk's environment now reports `force_organization_selection: false`. Membership limit is 5 per organization (Clerk default, unchanged).
+  - Browser-verified 2026-11-15 with Playwright against local `npm run dev`, signed in as a throwaway Clerk test user (`+clerk_test`, code 424242, created with the user's approval):
+    - Sign-in landed on `/editor` with no "choose organization" step, so personal accounts work.
+    - The switcher shows "Personal account" above the My Projects / Shared tabs.
+    - Creating an organization showed Clerk's invite step (skipped), then returned to `/editor` with the organization active. The session token carried the organization ID with role `admin` (`orgRole` `org:admin` on the server).
+    - Inviting a member from Manage organization → Members sent the invitation (2 of 5 seats).
+    - Switching back to Personal account returned to `/editor` with no organization in the session.
+    - Afterwards the test organization (and its invitation) and the test user were deleted through the Backend API. No projects were created, so the database was untouched.
+  - Cosmetic: the switcher trigger is narrower than the sidebar (the `w-full` appearance classes don't stretch it). The spec doesn't require full width.
+
+- Feature 32: Organization Projects (2026-11-15).
+  - Schema: `Project.organizationId String?` (Clerk organization ID; null = personal) and `@@index([organizationId])`. Migration `20261115075117_add_project_organization` adds a nullable column and an index, so existing projects stay personal. Applied to local `ghost_ai` with `prisma migrate dev`.
+  - Applied to production Prisma Postgres with `prisma migrate deploy` on 2026-11-15, so the live site and local `npm run dev` (which uses production through `.env.local`) both have the column.
+  - `POST /api/projects` sets `organizationId` from `auth().orgId` (null in the personal workspace).
+  - `getProjectsForUser(identity)` in `lib/projects.ts` now takes the `Identity`. My Projects is every project with `organizationId = orgId` in an organization workspace, and `ownerId = userId AND organizationId = null` in the personal workspace. Shared is unchanged.
+  - `GET /api/projects` returns the same scoped My Projects list. It had its own unscoped owner query, and nothing in the app calls it. Its response is now project summaries (`id`, `name`, `deletionPending`), not full rows.
+  - `getAccessibleProject` adds `{ organizationId: identity.orgId }` to its `OR` when an organization is active, and selects `organizationId`. That covers the workspace page, canvas, specs, AI design and spec routes, and Liveblocks auth.
+  - `architecture-context.md` records the active-organization rule.
+  - Verified: ESLint and `npm run build` clean. 5 checks passed against local `ghost_ai` (loading `.env` only) with a stubbed Clerk session:
+    - personal workspace lists only personal projects
+    - organization workspace lists only that organization's projects
+    - organization projects open only while their organization is active
+    - non-members are denied, and owners keep access from any workspace
+    - POST creates in the active workspace (organization and personal)
+
+    Test rows were deleted.
+  - Known until Feature 33: in an organization workspace, My Projects shows Rename and Delete on every project, but the API still allows only the owner (403 for other members).
+  - Browser-verified 2026-11-15 with Playwright on local `npm run dev` (production database), using three throwaway Clerk `+clerk_test` users created with the user's approval: owner A (admin), member B and outsider C, plus a test organization:
+    - A created "QA Org Project" from the New Project dialog with the organization active, and the row's `organizationId` was the organization's ID.
+    - B, on signing in, landed in the organization, where the project was in My Projects. B opened it, dragged a shape onto the canvas, and autosave showed Saved. Live collaboration connected, and `GET …/specs` returned 200.
+    - B in the personal workspace: the project wasn't listed, `GET …/specs` returned 403, and the URL showed "Project unavailable".
+    - C (not a member): the project wasn't listed, `GET …/specs` and `POST /api/liveblocks-auth` returned 403, and the URL showed "Project unavailable".
+    - AI design wasn't run, to avoid a real Trigger.dev and OpenAI run. Its route uses the same `getAccessibleProject` check covered above.
+    - Cleanup: A deleted the project through `DELETE /api/projects/[id]` (204, which removes the row, the Liveblocks room and the canvas Blob). The test organization and users were deleted, and 0 rows or users remain. The test dev server was stopped.
+  - Dev-server note: running `npm run build` while `next dev` is running rewrites `.next` and breaks the dev server ("Jest worker encountered 2 child process exceptions", 500s). Restart `next dev` after a build.
+
 ## In Progress
 
 - None.
 
 ## Next Up
-- Next feature spec
+- Feature 33: Organization Roles (`context/feature-specs/33-organization-roles.md`)
+
+## Roadmap
+
+Specs live in `context/feature-specs/`. Implement in number order; later specs depend on earlier ones.
+
+### Phase 1: Production readiness
+- 30 Commercial scope context — Complete
+- 31 Clerk organizations — Complete
+- 32 Organization projects — Complete
+- 33 Organization roles — Not started
+- 34 Billing plans and checkout — Not started
+- 35 Stripe webhooks — Not started
+- 36 Usage limits — Not started
+- 37 Billing settings UI — Not started
+- 38 Error monitoring and environment validation — Not started
+- 39 Legal and trust pages — Not started
+
+### Phase 2: Segmentation and ease of use
+- 40 Design context model — Not started
+- 41 Design context setup UI — Not started
+- 42 Context-aware design agent — Not started
+- 43 Cloud service nodes — Not started
+- 44 Template labels and filters — Not started
+- 45 Segmented template library — Not started
+- 46 Context-aware spec generation — Not started
+- 47 Contextual prompt suggestions — Not started
+- 48 Node AI actions — Not started
+- 49 Onboarding walkthrough — Not started
+
+### Phase 3: Exports and review
+- 50 Image export — Not started
+- 51 Diagram text export (Mermaid, draw.io) — Not started
+- 52 Architecture review task — Not started
+- 53 Architecture review UI — Not started
+
+### Phase 4: Team workflow and integrations
+- 54 Node comments — Not started
+- 55 Version history API — Not started
+- 56 Version history UI — Not started
+- 57 Approval status — Not started
+- 58 Decision record generation — Not started
+- 59 Decision record UI — Not started
+- 60 Atlassian connection — Not started
+- 61 Confluence spec publish — Not started
+- 62 Jira issues from design — Not started
+- 63 GitHub repository link — Not started
+
+### Phase 5: Cost and infrastructure code
+- 64 Cost estimate task — Not started
+- 65 Cost estimate UI — Not started
+- 66 IaC generation task — Not started
+- 67 IaC download UI — Not started
 
 
 

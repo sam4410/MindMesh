@@ -8,11 +8,14 @@ export interface Identity {
   email: string | undefined;
   name: string;
   imageUrl: string;
+  // Active Clerk organization and the user's role in it; null in the personal workspace.
+  orgId: string | null;
+  orgRole: string | null;
 }
 
 // Cached per request: the editor layout and workspace page both need it, and currentUser() calls Clerk's API.
 export const getCurrentIdentity = cache(async (): Promise<Identity | null> => {
-  const user = await currentUser();
+  const [user, { orgId, orgRole }] = await Promise.all([currentUser(), auth()]);
   if (!user) return null;
   // Collaborator emails are matched lowercased.
   const email = user.primaryEmailAddress?.emailAddress.trim().toLowerCase();
@@ -21,10 +24,13 @@ export const getCurrentIdentity = cache(async (): Promise<Identity | null> => {
     email,
     name: user.fullName ?? user.username ?? email ?? "Anonymous",
     imageUrl: user.imageUrl,
+    orgId: orgId ?? null,
+    orgRole: orgRole ?? null,
   };
 });
 
-// Returns the project if the user owns it or collaborates on it; null for no access or no such project.
+// Returns the project if the user owns it, collaborates on it, or it belongs to the user's active
+// organization; null for no access or no such project.
 export async function getAccessibleProject(projectId: string, identity: Identity) {
   return prisma.project.findFirst({
     where: {
@@ -33,9 +39,10 @@ export async function getAccessibleProject(projectId: string, identity: Identity
       OR: [
         { ownerId: identity.userId },
         ...(identity.email ? [{ collaborators: { some: { email: identity.email } } }] : []),
+        ...(identity.orgId ? [{ organizationId: identity.orgId }] : []),
       ],
     },
-    select: { id: true, name: true, ownerId: true, canvasJsonPath: true },
+    select: { id: true, name: true, ownerId: true, organizationId: true, canvasJsonPath: true },
   });
 }
 

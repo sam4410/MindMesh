@@ -1,3 +1,4 @@
+import { OrganizationSwitcher } from "@clerk/nextjs";
 import type { LucideIcon } from "lucide-react";
 import { FolderOpen, Pencil, Plus, Trash2, Users, X } from "lucide-react";
 import Link from "next/link";
@@ -54,6 +55,17 @@ export function ProjectSidebar({
           <Button variant="ghost" size="icon-sm" onClick={onClose} aria-label="Close sidebar">
             <X className="h-4 w-4" />
           </Button>
+        </div>
+
+        <div className="border-b border-surface-border px-3 py-2">
+          {/* Switching workspace reloads /editor so the project list matches it. Styled by ClerkProvider's appearance. */}
+          <OrganizationSwitcher
+            hidePersonal={false}
+            afterSelectOrganizationUrl="/editor"
+            afterSelectPersonalUrl="/editor"
+            afterCreateOrganizationUrl="/editor"
+            appearance={{ elements: { rootBox: "w-full", organizationSwitcherTrigger: "w-full justify-between" } }}
+          />
         </div>
 
         <Tabs defaultValue="mine" className="min-h-0 flex-1 px-3 pt-3">

@@ -11,6 +11,8 @@
 | Canvas           | Liveblocks + React Flow | Real-time collaborative canvas, presence, and cursors          |
 | Background tasks | Trigger.dev             | Durable AI generation workflows                                |
 | Artifact storage | Vercel Blob             | Canvas snapshots and generated Markdown specs                  |
+| Billing          | Stripe                  | Subscriptions, checkout, customer portal                       |
+| Monitoring       | Sentry                  | Error reporting                                                |
 
 ## System Boundaries
 
@@ -24,7 +26,7 @@
 ## Storage Model
 
 - **Database**: metadata, ownership, relationships, and task run records.
-- **Vercel Blob**: generated artifacts — canvas snapshots at `canvas/{projectId}.json` and specs at `specs/{projectId}/{specId}.md`.
+- **Vercel Blob**: generated artifacts — canvas snapshots at `canvas/{projectId}.json`, specs at `specs/{projectId}/{specId}.md`, saved canvas versions at `versions/{projectId}/{versionId}.json`, and generated infrastructure code at `iac/{projectId}/{bundleId}.zip`.
 - Project records, spec records, and task run records belong in PostgreSQL.
 - Canvas content and Markdown output are stored in and retrieved from Vercel Blob.
 - The blob URL is stored in the database (`canvasJsonPath`, `filePath`) as the reference to the artifact.
@@ -36,6 +38,11 @@
 - Only authenticated users can access protected routes.
 - Only the owner or a collaborator can mutate project resources.
 - Liveblocks room tokens are issued only after verifying project membership.
+- Projects can belong to a Clerk organization; members of that organization can access its projects.
+- Project ownership by workspace: `Project.organizationId` holds the Clerk organization ID, or null for a personal project. New projects are created in the active workspace. Existing projects stay personal.
+- Organization access uses the **active** organization from the session (`auth().orgId`). A member of several organizations must switch to the right one to see and open its projects. "My Projects" lists the active organization's projects, or the user's personal projects in the personal workspace; "Shared" (collaborator by email) is the same in every workspace.
+- Roles are owner, admin, member, and collaborator.
+- Clerk Organizations is enabled. Personal accounts stay enabled, so users keep a personal workspace. Clerk's default roles are used: `org:admin` (organization creators) and `org:member` (default for invited members). The active organization and role come from `auth()` (`orgId`, `orgRole`) and are exposed on `Identity`.
 
 ## Starter System Designs
 
@@ -66,3 +73,7 @@
 3. Auth and ownership are enforced at every mutation boundary.
 4. Client components are used only where browser interactivity or real-time state requires them.
 5. The canvas schema must remain consistent between user-created content and imported templates.
+6. Plan limits are enforced server-side before any AI task is triggered.
+7. Integration credentials are encrypted at rest and never returned to the client.
+8. Design context is read from the project record on the server, never trusted from the client.
+9. External API calls made in request handlers must be short; anything AI-driven runs in Trigger.dev.

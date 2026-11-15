@@ -59,6 +59,14 @@ MindMesh is a real-time collaborative system design workspace. Users describe a 
 - Specs are persisted as files and linked to the project in the database.
 - Users can view and download generated specs.
 
+### Commercial Features
+
+- Organizations, billing, and plan limits.
+- Design context segmentation (cloud provider, architecture style, industry, project type).
+- Exports and AI architecture review.
+- Team workflow and integrations (comments, versions, approvals, decision records, Atlassian, GitHub).
+- Cost estimates and infrastructure-as-code generation.
+
 ## Scope
 
 ### In Scope
@@ -72,12 +80,12 @@ MindMesh is a real-time collaborative system design workspace. Users describe a 
 - AI-powered Markdown spec generation from the canvas graph
 - Persistent storage for project metadata and generated artifacts
 - Spec download
+- Billing and subscription plans
+- Organization workspaces with owner, admin, and member roles
+- Versioned canvas history
 
 ### Out Of Scope
 
-- Billing and subscription systems
-- Enterprise permission tiers beyond owner and collaborator
-- Versioned spec history and review workflows
 - Production object storage migration
 - Mobile-native applications
 
@@ -89,3 +97,8 @@ MindMesh is a real-time collaborative system design workspace. Users describe a 
 4. AI can generate an architecture into the shared room from a prompt.
 5. The graph can be converted into a persisted Markdown spec.
 6. Project metadata and generated artifacts are stored in the correct layers.
+7. An organization can subscribe to a paid plan and AI usage is limited by plan.
+8. Organization members can work on shared projects, with owner, admin, and member roles enforced.
+9. AI designs, templates, and specs follow the project's design context (cloud provider, architecture style, industry, project type).
+10. A design can be exported, reviewed by AI, versioned, approved, and published to team tools.
+11. A design can produce a rough cost estimate and reviewable infrastructure code.

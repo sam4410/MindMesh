@@ -20,7 +20,7 @@ async function EditorFrame({ children }: { children: ReactNode }) {
   const identity = await getCurrentIdentity();
   if (!identity) redirect(process.env.NEXT_PUBLIC_CLERK_SIGN_IN_URL!);
 
-  const { owned, shared } = await getProjectsForUser(identity.userId, identity.email);
+  const { owned, shared } = await getProjectsForUser(identity);
 
   return (
     <EditorShell ownedProjects={owned} sharedProjects={shared}>

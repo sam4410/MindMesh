@@ -6,6 +6,7 @@ enum ProjectStatus {
 model Project {
   id             String                @id @default(cuid())
   ownerId        String // Clerk user ID
+  organizationId String? // Clerk organization ID; null for a personal project
   name           String
   description    String?
   status         ProjectStatus         @default(DRAFT)
@@ -18,6 +19,7 @@ model Project {
   specs          ProjectSpec[]
 
   @@index([ownerId])
+  @@index([organizationId])
   @@index([createdAt])
 }
 
