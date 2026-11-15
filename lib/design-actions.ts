@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { MIN_NODE_SIZE, SHAPE_SIZES, createNodeId } from "@/lib/canvas-shapes";
+import { CLOUD_SERVICE_IDS } from "@/lib/cloud-services";
 import {
   NEW_EDGE_DEFAULTS,
   NODE_COLORS,
@@ -27,6 +28,8 @@ const id = z.string();
 const shape = z.enum(NODE_SHAPES);
 const color = z.enum(COLOR_NAMES);
 const cell = { column: z.number().int(), row: z.number().int() };
+// Nullable, not optional, for OpenAI's strict schema.
+const service = z.enum(CLOUD_SERVICE_IDS).nullable();
 
 // What the model may ask for. Everything it returns is checked again when applied.
 export const designPlanSchema = z.object({
@@ -38,7 +41,15 @@ export const designPlanSchema = z.object({
   summary: z.string().describe("One or two sentences on what was designed or changed."),
   actions: z.array(
     z.union([
-      z.object({ type: z.literal("addNode"), id, label: z.string(), shape, color, ...cell }),
+      z.object({
+        type: z.literal("addNode"),
+        id,
+        label: z.string(),
+        shape,
+        color,
+        service: service.describe("managed cloud service ID, or null for none"),
+        ...cell,
+      }),
       z.object({ type: z.literal("moveNode"), id, ...cell }),
       z.object({ type: z.literal("resizeNode"), id, width: z.number(), height: z.number() }),
       z.object({
@@ -47,6 +58,7 @@ export const designPlanSchema = z.object({
         label: z.string().nullable().describe("null keeps the current label"),
         shape: shape.nullable().describe("null keeps the current shape"),
         color: color.nullable().describe("null keeps the current color"),
+        service: service.describe("managed cloud service ID; null keeps the current service"),
         width: z.number().nullable().describe("explicit width for a shape change, or null for the shape default"),
         height: z.number().nullable().describe("explicit height for a shape change, or null for the shape default"),
       }),
@@ -188,7 +200,12 @@ export function applyDesignAction(
         type: "canvasNode",
         position,
         ...size,
-        data: { label: cleanLabel(action.label), shape: action.shape, ...colorPair(action.color) },
+        data: {
+          label: cleanLabel(action.label),
+          shape: action.shape,
+          ...colorPair(action.color),
+          ...(action.service && { service: action.service }),
+        },
       });
       return centerOf({ ...position, ...size });
     }
@@ -225,6 +242,7 @@ export function applyDesignAction(
         ...(action.label != null && { label: cleanLabel(action.label) }),
         ...(action.shape && { shape: action.shape }),
         ...(action.color && colorPair(action.color)),
+        ...(action.service && { service: action.service }),
       });
       return centerOf(updatedBox ?? boxOf(node));
     }

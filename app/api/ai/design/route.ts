@@ -1,5 +1,6 @@
 import { runs, tasks } from "@trigger.dev/sdk";
 
+import { getDesignContext } from "@/lib/design-context";
 import { getAccessibleProject, getCurrentIdentity } from "@/lib/project-access";
 import { prisma } from "@/lib/prisma";
 import type { designAgent } from "@/trigger/design-agent";
@@ -44,6 +45,8 @@ export async function POST(req: Request) {
     ({ id: runId } = await tasks.trigger<typeof designAgent>("design-agent", {
       prompt: trimmedPrompt,
       roomId,
+      // From the project record on the server, never from the request body.
+      designContext: getDesignContext(project),
     }));
   } catch (err) {
     console.error("Failed to start design task", err);

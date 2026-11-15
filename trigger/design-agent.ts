@@ -13,6 +13,8 @@ import {
   designPlanSchema,
   type DesignPlan,
 } from "@/lib/design-actions";
+import { EMPTY_DESIGN_CONTEXT, type DesignContext } from "@/lib/design-context";
+import { buildDesignContextRules } from "@/lib/design-context-prompts";
 import { getLiveblocks } from "@/lib/liveblocks";
 import { NODE_COLORS, type CanvasEdge, type CanvasNode } from "@/types/canvas";
 import { AI_STATUS_FEED_ID, type TaskStatusMessage } from "@/types/tasks";
@@ -20,6 +22,8 @@ import { AI_STATUS_FEED_ID, type TaskStatusMessage } from "@/types/tasks";
 interface DesignAgentPayload {
   prompt: string;
   roomId: string;
+  // Read from the project record by POST /api/ai/design; optional so runs queued before it existed still work.
+  designContext?: DesignContext;
 }
 
 const MODEL_ID = "gpt-6-luna";
@@ -72,7 +76,7 @@ export const designAgent = task({
   id: "design-agent",
   // A retry would apply the canvas changes from the failed attempt a second time.
   retry: { maxAttempts: 1 },
-  run: async ({ prompt, roomId }: DesignAgentPayload) => {
+  run: async ({ prompt, roomId, designContext = EMPTY_DESIGN_CONTEXT }: DesignAgentPayload) => {
     const liveblocks = getLiveblocks();
     // Same call as /api/liveblocks-auth, so the room exists even if nobody has opened it yet.
     await liveblocks.getOrCreateRoom(roomId, { defaultAccesses: [] });
@@ -107,9 +111,14 @@ export const designAgent = task({
         canvas = { nodes: [...flow.nodes], edges: [...flow.edges] };
       });
 
-      const plan = await planDesign(prompt, canvas);
+      const plan = await planDesign(prompt, canvas, designContext);
       const actions = plan.actions.slice(0, MAX_ACTIONS);
-      logger.info("Design planned", { actions: actions.length, plan: plan.plan, summary: plan.summary });
+      logger.info("Design planned", {
+        actions: actions.length,
+        plan: plan.plan,
+        summary: plan.summary,
+        designContext,
+      });
 
       if (actions.length === 0) {
         await postStatus("completed", plan.summary || "No changes were needed.");
@@ -164,7 +173,8 @@ async function ensureStatusFeed(roomId: string) {
 
 async function planDesign(
   prompt: string,
-  canvas: { nodes: CanvasNode[]; edges: CanvasEdge[] }
+  canvas: { nodes: CanvasNode[]; edges: CanvasEdge[] },
+  designContext: DesignContext
 ): Promise<DesignPlan> {
   // openai() reads OPENAI_API_KEY.
   const current = {
@@ -173,6 +183,7 @@ async function planDesign(
       label: node.data.label,
       shape: node.data.shape,
       color: NODE_COLORS.find((c) => c.fill === node.data.color)?.name ?? "Neutral",
+      service: node.data.service ?? null,
       ...cellOf(node),
     })),
     edges: canvas.edges.map((edge) => ({
@@ -183,10 +194,12 @@ async function planDesign(
     })),
   };
 
+  // Empty when the project has no design context, which keeps the prompt exactly as before.
+  const contextRules = buildDesignContextRules(designContext);
   const { output } = await generateText({
     model: openai(MODEL_ID),
     system: SYSTEM_PROMPT,
-    prompt: `Current canvas (JSON):\n${JSON.stringify(current)}\n\nRequest:\n${prompt}`,
+    prompt: `Current canvas (JSON):\n${JSON.stringify(current)}\n\n${contextRules ? `${contextRules}\n\n` : ""}Request:\n${prompt}`,
     output: Output.object({ schema: designPlanSchema }),
     abortSignal: AbortSignal.timeout(PLAN_TIMEOUT_MS),
   });

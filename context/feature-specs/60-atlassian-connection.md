@@ -1,5 +1,12 @@
 Let a workspace connect its Atlassian site (Jira and Confluence) with an API token, stored encrypted. This unit adds the connection only; publishing and issue creation come next.
 
+## Billing Deferred
+
+Billing and usage limits (specs 34–39) are deferred. Until they are implemented:
+
+- `lib/env.ts` doesn't exist (spec 38 is deferred): don't create it; document `INTEGRATIONS_ENCRYPTION_KEY` in the Session Notes of `context/progress-tracker.md` instead
+- `lib/crypto.ts` throws a clear error naming the variable when it is missing
+
 ## Implementation
 
 1. Add encryption helpers: `lib/crypto.ts`.

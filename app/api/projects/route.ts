@@ -26,7 +26,13 @@ export async function POST(req: Request) {
     // A client-supplied id keeps the project ID equal to its Liveblocks room ID; otherwise the schema's cuid applies.
     const project = await prisma.project.create({
       // Created in the active workspace: the active organization, or personal (null).
-      data: { id: input.id, ownerId: userId, organizationId: orgId ?? null, name: input.name ?? "Untitled Project" },
+      data: {
+        id: input.id,
+        ownerId: userId,
+        organizationId: orgId ?? null,
+        name: input.name ?? "Untitled Project",
+        ...input.designContext,
+      },
     });
     return Response.json(project, { status: 201 });
   } catch (error) {

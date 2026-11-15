@@ -20,6 +20,8 @@ Count AI runs per workspace and block new runs once the monthly plan limit is re
 
 4. Enforce limits in the AI routes.
    - `POST /api/ai/design` and `POST /api/ai/spec`: after the access check and before triggering the task, call `checkUsage`
+   - serialize admission per `billingAccountId` and task kind with a distributed, database-backed lock held from the usage check through `TaskRun` creation; concurrent requests must recheck usage after acquiring the lock, so only requests within the remaining allowance can trigger a task
+   - release the lock on every success and failure path; a request that finds no remaining allowance returns the same 402 response without triggering a task
    - when not allowed, return 402 `{ error: "limit_reached", kind, used, limit, plan }`
    - when creating the `TaskRun`, set `kind` (`DESIGN` or `SPEC`) and `billingAccountId`
 
@@ -31,12 +33,13 @@ Count AI runs per workspace and block new runs once the monthly plan limit is re
 
 ## Notes
 
-- `shortcut:` two runs started at the same moment can both pass the check and exceed the limit by one. Acceptable at these volumes; switch to a counter row with a transaction if limits ever need to be exact.
+- Serialize usage admission across application instances; an in-process lock is insufficient. Hold the lock until the `TaskRun` is recorded so a concurrent request observes the updated usage.
 
 ## Check When Done
 
 - New `TaskRun` rows record `kind` and `billingAccountId`.
 - A Free workspace gets 402 on its 6th design run in a month.
+- When two requests race for the final available run, only one starts a task; the other receives 402.
 - A Team workspace is allowed past the Free limit.
 - Usage resets at the start of the next UTC month.
 - `npm run build` passes.

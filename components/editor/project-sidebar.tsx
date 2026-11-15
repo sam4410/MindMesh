@@ -5,6 +5,7 @@ import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { canManageProject } from "@/lib/project-roles";
 import type { ProjectSummary } from "@/lib/projects";
 import { cn } from "@/lib/utils";
 
@@ -155,7 +156,7 @@ function ProjectList({ projects, activeProjectId, onRename, onDelete }: ProjectL
                 </span>
               </Link>
             )}
-            {onRename && onDelete && (
+            {onRename && onDelete && canManageProject(project.role) && (
               <div className="flex md:opacity-0 md:group-focus-within:opacity-100 md:group-hover:opacity-100">
                 {!project.deletionPending && (
                   <Button

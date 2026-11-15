@@ -1,5 +1,11 @@
 Let users generate, list, and download infrastructure-as-code bundles from the editor.
 
+## Billing Deferred
+
+Billing and usage limits (specs 34–39) are deferred. Until they are implemented:
+
+- skip the 402 "Team plan" message and upgrade link; generation is available to everyone, and failures show the generic error message
+
 ## Implementation
 
 1. Add the list and download routes.

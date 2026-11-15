@@ -1,5 +1,11 @@
 Show architecture reviews in the AI sidebar, and let users jump from a finding to the affected nodes.
 
+## Billing Deferred
+
+Billing and usage limits (specs 34–39) are deferred. Until they are implemented:
+
+- skip the 402 `limit_reached` handling from spec 37; show the generic error message instead
+
 ## Implementation
 
 1. Add a Review tab.

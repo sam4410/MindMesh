@@ -1,5 +1,12 @@
 Generate architecture decision records (ADRs) from the design chat and canvas, stored alongside specs. Backend only.
 
+## Billing Deferred
+
+Billing and usage limits (specs 34–39) are deferred. Until they are implemented:
+
+- skip the usage check in `POST /api/ai/adr`, the `ADR` `TaskRunKind` value, and the `adrRunsPerMonth` plan limit (they depend on specs 34 and 36)
+- create the `TaskRun` record the same way the spec routes do today
+
 ## Implementation
 
 1. Store ADRs as a kind of spec.

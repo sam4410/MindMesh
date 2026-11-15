@@ -1,17 +1,33 @@
 "use client";
 
-import type { FormEvent } from "react";
+import { ChevronRight } from "lucide-react";
+import { useState, type FormEvent } from "react";
 
+import { DesignContextFields } from "@/components/editor/design-context-fields";
 import { EditorDialog } from "@/components/editor/editor-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useProjectActionsContext } from "@/hooks/use-project-actions";
+import { cn } from "@/lib/utils";
 
 const FORM_ID = "project-dialog-form";
 
 export function ProjectDialogs() {
-  const { dialog, isOpen, name, setName, roomId, isLoading, error, canSubmit, submit, close } =
-    useProjectActionsContext();
+  const {
+    dialog,
+    isOpen,
+    name,
+    setName,
+    designContext,
+    setDesignContext,
+    roomId,
+    isLoading,
+    error,
+    canSubmit,
+    submit,
+    close,
+  } = useProjectActionsContext();
+  const [showContext, setShowContext] = useState(false);
 
   if (!dialog) return null;
 
@@ -47,12 +63,43 @@ export function ProjectDialogs() {
     </form>
   );
 
+  // Collapsed by default to keep the dialog compact; the context is optional.
+  const contextSection = (
+    <div className="space-y-3">
+      <button
+        type="button"
+        onClick={() => setShowContext((shown) => !shown)}
+        aria-expanded={showContext}
+        aria-controls="create-design-context"
+        className="flex items-center gap-1.5 rounded-md text-sm text-copy-secondary outline-none hover:text-copy-primary focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <ChevronRight className={cn("h-4 w-4 transition-transform", showContext && "rotate-90")} />
+        Add design context (optional)
+      </button>
+      {showContext && (
+        <div id="create-design-context">
+          <DesignContextFields
+            idPrefix="create-context"
+            value={designContext}
+            onChange={setDesignContext}
+            disabled={isLoading}
+          />
+        </div>
+      )}
+    </div>
+  );
+
   const config =
     dialog.type === "create"
       ? {
           title: "New project",
           description: "Name your new architecture workspace.",
-          body: nameField,
+          body: (
+            <>
+              {nameField}
+              {contextSection}
+            </>
+          ),
           action: (
             <Button type="submit" form={FORM_ID} disabled={!canSubmit}>
               {isLoading ? "Creating…" : "Create project"}

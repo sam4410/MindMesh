@@ -1,5 +1,13 @@
 Add the backend for rough monthly cost estimates: API route, token route, and a Trigger.dev task that prices each component of the design.
 
+## Billing Deferred
+
+Billing and usage limits (specs 34–39) are deferred. Until they are implemented:
+
+- skip the usage check in `POST /api/ai/cost`, the `COST` `TaskRunKind` value, and the `costRunsPerMonth` plan limit (they depend on specs 34 and 36)
+- create the `TaskRun` record the same way the spec routes do today
+- ignore the "Usage limits apply" check
+
 ## Implementation
 
 1. Define the schemas in `types/tasks.ts`.

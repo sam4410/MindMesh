@@ -25,12 +25,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isNode(value: unknown) {
   if (!isRecord(value) || typeof value.id !== "string" || !isRecord(value.data)) return false;
-  const { label, color, shape, textColor } = value.data;
+  const { label, color, shape, textColor, service } = value.data;
   if (
     typeof label !== "string" ||
     typeof color !== "string" ||
     !NODE_SHAPES.includes(shape as NodeShape) ||
-    (textColor !== undefined && typeof textColor !== "string")
+    (textColor !== undefined && typeof textColor !== "string") ||
+    (service !== undefined && typeof service !== "string")
   ) {
     return false;
   }

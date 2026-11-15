@@ -20,6 +20,7 @@ Let projects belong to an organization, so every member of the active organizati
 
 4. Grant access to organization members.
    - in `getAccessibleProject` (`lib/project-access.ts`) add `{ organizationId: identity.orgId }` to the `OR` list when `identity.orgId` is set
+   - organization ownership does not bypass membership: a removed member loses direct access to organization projects even if `ownerId` still matches; separately granted collaborator access remains unchanged
    - this one change covers every route that already uses the helper: canvas, specs, AI design, AI spec, Liveblocks auth
    - add `organizationId` to the helper's `select`
 

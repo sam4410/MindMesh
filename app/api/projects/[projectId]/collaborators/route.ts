@@ -1,7 +1,7 @@
 import { clerkClient } from "@clerk/nextjs/server";
 
 import { Prisma } from "@/app/generated/prisma/client";
-import { getAccessibleProject, getCurrentIdentity, requireOwner } from "@/lib/project-access";
+import { getAccessibleProject, getCurrentIdentity, requireProjectManager } from "@/lib/project-access";
 import { prisma } from "@/lib/prisma";
 
 type Context = RouteContext<"/api/projects/[projectId]/collaborators">;
@@ -62,7 +62,7 @@ export async function GET(_req: Request, ctx: Context) {
 
 export async function POST(req: Request, ctx: Context) {
   const { projectId } = await ctx.params;
-  const denied = await requireOwner(projectId);
+  const denied = await requireProjectManager(projectId);
   if (denied) return denied;
 
   const body: unknown = await req.json().catch(() => null);

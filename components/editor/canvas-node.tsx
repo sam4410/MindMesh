@@ -4,6 +4,7 @@ import { useState } from "react";
 import { NodeColorToolbar } from "@/components/editor/node-color-toolbar";
 import { ShapeGraphic } from "@/components/editor/shape-graphic";
 import { MIN_NODE_SIZE } from "@/lib/canvas-shapes";
+import { CLOUD_PROVIDER_BADGES, getCloudService, type CloudService } from "@/lib/cloud-services";
 import { cn } from "@/lib/utils";
 import { DEFAULT_NODE_TEXT_COLOR, type CanvasEdge, type CanvasNode } from "@/types/canvas";
 
@@ -14,6 +15,7 @@ export function CanvasNodeView({ id, data, selected }: NodeProps<CanvasNode>) {
   // Resize, label and color changes all go through onNodesChange, which syncs them via Liveblocks.
   const { updateNodeData } = useReactFlow<CanvasNode, CanvasEdge>();
   const [isEditing, setIsEditing] = useState(false);
+  const service = getCloudService(data.service);
 
   return (
     <div
@@ -45,6 +47,7 @@ export function CanvasNodeView({ id, data, selected }: NodeProps<CanvasNode>) {
         />
       ))}
 
+      <div className="relative flex max-w-full flex-col items-center gap-1">
       {/* The text (or placeholder) always sizes this box and only turns invisible while the
           textarea sits on top of it, so opening the editor and typing never shift the layout. */}
       <div
@@ -85,6 +88,30 @@ export function CanvasNodeView({ id, data, selected }: NodeProps<CanvasNode>) {
           />
         )}
       </div>
+      {service && <ServiceBadge service={service} label={data.label} />}
+      </div>
     </div>
+  );
+}
+
+// Provider badge plus the service name; the name is skipped when the label already says it,
+// as in "Catalog DB (Cosmos DB)".
+function ServiceBadge({ service, label }: { service: CloudService; label: string }) {
+  const badge = CLOUD_PROVIDER_BADGES[service.provider];
+  // "Azure SQL" next to an "Azure" badge reads as "Azure | SQL", not "Azure | Azure SQL".
+  const prefix = `${badge.label} `;
+  const shortName = service.name.startsWith(prefix) ? service.name.slice(prefix.length) : service.name;
+  const fullName = service.name.startsWith(prefix) ? service.name : `${prefix}${service.name}`;
+  const showName = !label.toLowerCase().includes(shortName.toLowerCase());
+  return (
+    <span className="flex max-w-full items-center gap-1 px-2 text-[10px] leading-3" title={fullName}>
+      <span
+        className="shrink-0 rounded-sm border px-1 font-semibold"
+        style={{ color: badge.color, borderColor: `${badge.color}80` }}
+      >
+        {badge.label}
+      </span>
+      {showName && <span className="truncate opacity-70">{shortName}</span>}
+    </span>
   );
 }

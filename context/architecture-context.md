@@ -37,9 +37,10 @@
 - Projects can include additional collaborators.
 - Only authenticated users can access protected routes.
 - Only the owner or a collaborator can mutate project resources.
+- Project roles (`getProjectRole` in `lib/project-access.ts`): owner, admin (organization project, `org:admin` in the active organization), member (organization project, active organization), collaborator (access by email). Everyone with access can open, edit the canvas, chat, run AI, and generate specs. Anyone with access can also change the project's design context (`PATCH /api/projects/[projectId]` with only `designContext`). Only owners and admins can rename, delete, or manage collaborators (`requireProjectManager`: 404 without access, 403 without the role). `canManageProject` lives in the client-safe `lib/project-roles.ts`.
 - Liveblocks room tokens are issued only after verifying project membership.
 - Projects can belong to a Clerk organization; members of that organization can access its projects.
-- Project ownership by workspace: `Project.organizationId` holds the Clerk organization ID, or null for a personal project. New projects are created in the active workspace. Existing projects stay personal.
+- Project ownership by workspace: `Project.organizationId` holds the Clerk organization ID, or null for a personal project. New projects are created in the active workspace. Existing projects stay personal. Organization-project ownership does not bypass active organization membership; removing a member revokes direct access even if `ownerId` still matches. Independently granted collaborator access is unchanged.
 - Organization access uses the **active** organization from the session (`auth().orgId`). A member of several organizations must switch to the right one to see and open its projects. "My Projects" lists the active organization's projects, or the user's personal projects in the personal workspace; "Shared" (collaborator by email) is the same in every workspace.
 - Roles are owner, admin, member, and collaborator.
 - Clerk Organizations is enabled. Personal accounts stay enabled, so users keep a personal workspace. Clerk's default roles are used: `org:admin` (organization creators) and `org:member` (default for invited members). The active organization and role come from `auth()` (`orgId`, `orgRole`) and are exposed on `Identity`.

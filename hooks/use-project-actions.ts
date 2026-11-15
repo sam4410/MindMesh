@@ -1,6 +1,7 @@
 import { useParams, useRouter } from "next/navigation";
 import { createContext, useContext, useState } from "react";
 
+import { EMPTY_DESIGN_CONTEXT, type DesignContext } from "@/lib/design-context";
 import type { ProjectSummary } from "@/lib/projects";
 import { toSlug } from "@/lib/slug";
 
@@ -32,12 +33,15 @@ export function useProjectActions() {
   const [dialog, setDialog] = useState<DialogState | null>(null);
   const [isOpen, setIsOpen] = useState(false);
   const [name, setName] = useState("");
+  // Create dialog only: the optional design context for the new project.
+  const [designContext, setDesignContext] = useState<DesignContext>(EMPTY_DESIGN_CONTEXT);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   function open(next: DialogState, initialName = "") {
     setDialog(next);
     setName(initialName);
+    setDesignContext(EMPTY_DESIGN_CONTEXT);
     setError(null);
     setIsOpen(true);
   }
@@ -58,7 +62,11 @@ export function useProjectActions() {
     try {
       if (dialog.type === "create") {
         // A blank name is omitted so the API applies its "Untitled Project" default.
-        await send("/api/projects", "POST", { id: roomId, name: trimmedName || undefined });
+        await send("/api/projects", "POST", {
+          id: roomId,
+          name: trimmedName || undefined,
+          designContext,
+        });
         setIsOpen(false);
         router.push(`/editor/${roomId}`);
         router.refresh();
@@ -86,6 +94,8 @@ export function useProjectActions() {
     isOpen,
     name,
     setName,
+    designContext,
+    setDesignContext,
     roomId,
     isLoading,
     error,
