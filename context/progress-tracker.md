@@ -3,10 +3,10 @@
 Update this file whenever the current phase, active feature, or implementation state changes.
 
 ## Current Phase
-- Commercial roadmap, Phase 1 (Production readiness). Features 30–32 complete.
+- Commercial roadmap, Phase 2 (Segmentation and ease of use). Features 40–43 complete; 34–39 deferred.
 
 ## Current Goal
-- Feature 33: Organization Roles
+- Feature 68: Canvas Boundaries
 
 ## Completed
 
@@ -179,34 +179,189 @@ Update this file whenever the current phase, active feature, or implementation s
     - Cleanup: A deleted the project through `DELETE /api/projects/[id]` (204, which removes the row, the Liveblocks room and the canvas Blob). The test organization and users were deleted, and 0 rows or users remain. The test dev server was stopped.
   - Dev-server note: running `npm run build` while `next dev` is running rewrites `.next` and breaks the dev server ("Jest worker encountered 2 child process exceptions", 500s). Restart `next dev` after a build.
 
+- Feature 33: Organization Roles (2026-11-15).
+  - `lib/project-access.ts`:
+    - `getProjectRole(project, identity)` returns:
+      - owner: `ownerId` matches, and for an organization project the user must still be in its active organization
+      - admin: organization project in the active organization with `org:admin`
+      - member: the same, without `org:admin`
+      - collaborator: any other access, which came through the collaborator email
+    - `requireProjectManager(projectId, { allowDeletionPending })` replaces `requireOwner`: 401 when signed out, 404 when the user has no access (`getAccessibleProject`, which gained an `includeDeletionPending` option), and 403 `"Only the owner or an admin can do this"` without the role.
+  - `ProjectRole` and `canManageProject` (owner or admin) live in the new client-safe `lib/project-roles.ts`, re-exported from `project-access.ts`. `project-access.ts` loads Clerk's server SDK and Prisma, so client components can't import it.
+  - Enforced in `PATCH`/`DELETE /api/projects/[projectId]`, `POST /api/projects/[projectId]/collaborators`, and `DELETE …/collaborators/[collaboratorId]`.
+  - Behavior change: a signed-in user with no access now gets 404 from these routes, where `requireOwner` returned 403. This follows the spec ("keep the existing 404 for no access") and matches the workspace page.
+  - `ProjectSummary` gained `role` (computed in `getProjectsForUser` for My Projects and Shared), so `GET /api/projects` and the editor layout data carry it.
+  - `project-sidebar.tsx` shows Rename and Delete only when `canManageProject(project.role)`.
+  - `share-dialog.tsx`: the `isOwner` prop became `canManage`, set from the current project's role in `editor-shell.tsx`. Members and collaborators see the list read-only, with the text "Only the owner or an admin can manage access."
+  - `architecture-context.md` records the roles and the permission rule.
+  - Verified: ESLint and `npm run build` clean. 6 checks passed against local `ghost_ai` (loading `.env` only), calling the real route handlers with a stubbed Clerk session:
+    - roles in the project list
+    - member gets 403 on rename, delete, add and remove collaborator
+    - collaborator gets 403
+    - non-member gets 404
+    - admin can rename and add and remove collaborators
+    - owner can rename, and both owner and admin pass the delete guard
+
+    Test rows were deleted.
+  - Browser-verified 2026-11-15 with Playwright on local `npm run dev` (production database). Setup: throwaway Clerk `+clerk_test` users created with the user's approval (admin A, member B, collaborator C), a test organization, A's "Roles A Project" with C invited by email, and B's "Roles B Project".
+    - **Member B:** no Rename or Delete on A's project, but both on B's own (owner). A's share dialog was read-only ("Only the owner or an admin can manage access.", collaborator listed, no invite or remove). Renaming A's project returned 403 with the new message.
+    - **Admin A:** Rename and Delete on both projects. On B's project the share dialog was full (invite form, Copy link). Renaming B's project returned 200.
+    - **Collaborator C:** A's project is listed under Shared with no Rename or Delete. The share dialog was read-only. Deleting returned 403.
+    - **Cleanup:** A deleted both projects (204 each, including B's project as admin). The test organization and users were deleted, and 0 projects, collaborators or users remain. The test dev server was stopped.
+    - Console errors were only the deliberate 403s and the known Clerk CDN and pg SSL notices.
+
+- Feature 40: Design Context Model (2026-11-15).
+  - `lib/design-context.ts` defines:
+    - the lists `CLOUD_PROVIDERS` (aws, azure, gcp, agnostic, on-prem), `ARCHITECTURE_STYLES` (monolith, modular-monolith, microservices, event-driven, serverless, data-mesh), `INDUSTRIES` (general, finance, healthcare, ecommerce, saas, gaming, public-sector) and `PROJECT_TYPES` (backend-platform, data-warehouse, ml-platform, cicd-pipeline, cloud-migration, realtime-app), each with `{ id, label }`
+    - the `DesignContext` type (four `string | null` fields)
+    - `designContextSchema` (Zod; each field restricted to its list's IDs, nullable, and optional, so an omitted field is left unchanged on update)
+    - `getDesignContext(project)`
+    - `formatDesignContext(ctx)`, e.g. "Azure · Microservices · Finance"
+  - Schema: `cloudProvider`, `architectureStyle`, `industry`, `projectType` (`String?`, plain strings, not enums) on `Project`. Migration `20261115100723_add_project_design_context` adds four nullable columns and is applied to local `ghost_ai`.
+  - Applied to production Prisma Postgres with `prisma migrate deploy` on 2026-11-15.
+  - `readProjectInput` accepts an optional `designContext`; unknown IDs return 400 "designContext is invalid: …". `POST /api/projects` saves it.
+  - `PATCH /api/projects/[projectId]` now takes `name`, `designContext`, or both (400 if neither):
+    - a name change still requires owner or admin (`requireProjectManager`, as in Feature 33)
+    - a context-only change needs only access (404 otherwise), because the spec says any role may change it
+    - recorded in `architecture-context.md`
+  - `getAccessibleProject` selects the four fields.
+  - Verified: ESLint and `npm run build` clean. 7 checks passed against local `ghost_ai` (loading `.env` only) with a stubbed Clerk session:
+    - formatter
+    - POST with valid context, POST with an unknown ID (400), and POST without context
+    - member updates the context only (partial update, null clears) but gets 403 on rename
+    - owner renames and changes the context in one request
+    - empty body or bad ID returns 400; non-member returns 404
+    - `getAccessibleProject` and `getDesignContext` return the fields
+
+    Test rows were deleted. No UI yet (Feature 41).
+
+- Feature 41: Design Context Setup UI (2026-11-15).
+  - Added the shadcn Select (`npx shadcn add select`, a new `components/ui/select.tsx`, Base UI based; no existing `components/ui` file changed).
+  - `components/editor/design-context-fields.tsx`: the four labeled selects in a two-column grid, shared by both dialogs. Each has a "Not set" item with value `null`, and the `items` prop makes the trigger show labels rather than IDs.
+  - `lib/design-context.ts` gained `DESIGN_CONTEXT_FIELD_LIST` (field order, labels, options), `EMPTY_DESIGN_CONTEXT`, and `designContextLabels(ctx)`. `formatDesignContext` now joins those labels.
+  - Create dialog (`project-dialogs.tsx`): a collapsed "Add design context (optional)" toggle (`aria-expanded`) under the name field reveals the selects.
+    - `use-project-actions.ts` holds the `designContext` state, reset on each open, and sends it with `POST /api/projects`.
+    - Creating with nothing selected works as before (all null).
+  - Navbar (`editor-navbar.tsx`): under the project name, the context shows as small muted chips, or "Add design context" when empty. This replaces the old "Workspace" subtitle. It is one button with a descriptive `aria-label`.
+  - `ProjectSummary` gained `designContext` (selected in `getProjectsForUser`), so the editor shell passes the current project's context to the navbar without another request.
+  - `components/editor/design-context-dialog.tsx`: an `EditorDialog` with the same selects.
+    - Save sends `PATCH /api/projects/[projectId]` `{ designContext }`, closes, and calls `router.refresh()`. Errors show inline.
+    - It remounts on each open (key includes an open counter), so the draft starts from the saved value.
+    - Any role with access can save (Feature 40's PATCH rule).
+    - The dialog description only describes the fields; it doesn't promise AI behavior that hasn't been built.
+  - No live sync to other tabs; collaborators see changes after reload, per the spec.
+  - Verified: ESLint and `npm run build` clean.
+  - Browser-verified 2026-11-15 with Playwright on local `npm run dev` (production database), as one throwaway Clerk `+clerk_test` user in the personal workspace:
+    - New Project dialog: "Add design context (optional)" is collapsed (`aria-expanded="false"`, no selects). Expanding it shows four "Not set" selects in a 2×2 grid.
+    - The dropdown list opens above the dialog with readable labels and a check on the current value.
+    - Choosing Azure / Microservices / Finance and creating opened the project, and the navbar showed the chips Azure, Microservices, Finance (`aria-label` "Design context: Azure, Microservices, Finance. Edit").
+    - Clicking the chips opened "Design context" with the saved values. Cancel discarded a draft change (AWS reverted to Azure on reopen). Setting Industry to Not set and Project type to Data warehouse, then Save, updated the chips to Azure, Microservices, Data warehouse.
+    - A project created without context showed "Add design context".
+    - The database matched: `azure` / `microservices` / null / `data-warehouse`, and all null for the plain project.
+    - Console: only the known Clerk CDN and pg SSL notices (the Next.js "1 Issue" badge is the pg SSL warning).
+    - Cleanup: both projects deleted through `DELETE` (204 each), the test user deleted, and the dev server stopped.
+  - Outside this session, during this feature, `lib/project-access.ts`, specs 32–36 and `architecture-context.md` were changed: organization ownership no longer grants access outside the active organization. Left as is.
+
+- Feature 42: Context-aware Design Agent (2026-11-15).
+  - `POST /api/ai/design` adds `designContext: getDesignContext(project)` to the task payload, read from the project returned by `getAccessibleProject`, never from the request body.
+  - `trigger/design-agent.ts`:
+    - `DesignAgentPayload.designContext` is optional, defaulting to `EMPTY_DESIGN_CONTEXT`, so runs queued before this change still work.
+    - `planDesign` appends the rules block after the current canvas and before "Request:". `SYSTEM_PROMPT` is unchanged.
+    - "Design planned" logs `designContext`.
+  - `lib/design-context-prompts.ts` `buildDesignContextRules(ctx)` returns "" when nothing applies, so the prompt is byte-for-byte the same as before for projects without context. Otherwise it returns a "Design context" block that tells the model to include the required components even when the request doesn't name them:
+    - **Cloud:** for AWS, Azure or GCP, the spec's 14-role service table, listing only that provider's column and telling the model to put the service name in node labels. Azure "Functions" and "Monitor" are written as "Azure Functions" and "Azure Monitor" for clarity. Cloud-agnostic and on-premises get generic, self-hosted technology names.
+    - **Style:** one rule per architecture style.
+    - **Industry:** required components for finance, healthcare, e-commerce, SaaS, gaming and public sector; "general" adds nothing.
+    - **Project type:** a focus rule for each type.
+  - Loaded the `trigger-tasks` skill first, per `CLAUDE.md`.
+  - Verified: ESLint, `tsc` and `npm run build` clean. 4 offline checks on the rules builder passed:
+    - no context gives ""
+    - Azure, microservices and finance include Cosmos DB, Service Bus, API Management, Key Vault, own data store, audit log, PCI scope and fraud check, and no other cloud's services
+    - agnostic and on-premises use generic names
+    - project types match, and unknown or "general" IDs add nothing
+  - Live AI run verified 2026-11-15. Setup: a temporary local worker (`trigger dev --env-file .env.local`, default branch), triggering `design-agent` with the spec's e-commerce prompt, `designContext` Azure + microservices + finance, and a throwaway Liveblocks room.
+    - Run `run_06gtu394s7ptcspdu4e0dp0ga2` COMPLETED in 82 s: 35 actions applied, 0 skipped, 15 nodes and 20 edges.
+    - **Azure services in the labels:** API Management, Container Apps, Cosmos DB (catalog), Azure SQL (users, orders), Azure Cache for Redis, Service Bus, Entra ID, Key Vault, Azure Functions, Blob Storage.
+    - **A store per data-owning service:** Users DB, Catalog DB, Orders DB, with no shared database. The cache sits beside the catalog service, with a "Cache Miss" edge to Cosmos DB.
+    - **Finance components the prompt didn't name:** an Audit Log, written by user, order, payment and fraud; Key Vault ("Get Keys"); a Fraud Check function in the payment flow; and a Payment Service.
+    - The room was deleted and the worker processes stopped.
+    - "No context leaves the prompt unchanged" is covered by the offline check (empty rules give the identical prompt). It wasn't re-run live, to save cost.
+  - Observations for later prompt tuning:
+    - The PCI scope appears only as an edge label ("PCI Boundary"), because the canvas has no grouping or boundary shape.
+    - Payment Service has no data store of its own (no ledger or payments DB).
+  - Your own `trigger dev --branch main` worker must be restarted to pick up the change before the live site uses it.
+
+- Feature 43: Cloud Service Nodes (2026-11-15).
+  - `lib/cloud-services.ts` catalog: 48 services as `{ id: "provider.slug", provider, name, role }`.
+    - Covers all 14 roles of the spec 42 table for AWS, Azure and GCP.
+    - Combined cells are split into separate entries (ECS/EKS, RDS/Aurora, Azure SQL/PostgreSQL, Kinesis/MSK, Container Apps/AKS, Cloud Run/GKE, Synapse/Fabric). GCP Pub/Sub serves both the queue and event-stream roles.
+    - Exports `CLOUD_SERVICE_IDS` (tuple for `z.enum`), `getCloudService`, `cloudServicesFor`, `CLOUD_SERVICE_ROLES`, and `CLOUD_PROVIDER_BADGES`. The badge colors are the provider brand colors (#FF9900, #0078D4, #4285F4), not theme tokens.
+  - `lib/design-context-prompts.ts` builds its per-role list from the catalog; the duplicate `SERVICE_MAP` was removed. Each line now shows the name and ID, e.g. "NoSQL DB: Cosmos DB (azure.cosmos-db)".
+    - When a cloud provider is set, the rule tells the model to set `service` from the list, so a service on Container Apps gets the Container Apps ID, and null for clients and external systems.
+    - Only the chosen provider's IDs are listed.
+  - `CanvasNodeData.service?: string` is optional, so templates and existing nodes stay valid (invariant 5).
+  - `lib/design-actions.ts`: `addNode` and `updateNodeData` take `service: z.enum(CLOUD_SERVICE_IDS).nullable()`. `addNode` writes it when not null. `updateNodeData` sets it, and null keeps the current value.
+  - The design agent's current-canvas JSON includes each node's `service`.
+  - `lib/canvas-snapshot.ts` `isNode` rejects a non-string `service`, as it does for `textColor`.
+  - `canvas-node.tsx` shows a provider badge (text in the brand color, with a 50% brand-color border) plus the muted service name under the label. The name is hidden when the label already contains it (e.g. "Catalog DB (Cosmos DB)"). The node size doesn't change.
+  - Specs: `specNodeSchema` keeps `service` (string, max 80, optional), and `generate-spec` describes nodes as "(cylinder, managed service: Azure Cosmos DB)". Unknown IDs are ignored.
+  - Verified: ESLint and `npm run build` clean. 5 offline checks passed:
+    - the catalog covers every role per provider with unique IDs
+    - the plan schema accepts IDs and null and rejects unknown IDs
+    - `addNode` writes `service`; `updateNodeData` sets it, and null keeps it
+    - snapshot validation
+    - the prompt lists only the chosen provider's IDs, including the GCP Pub/Sub event-stream line
+  - Live AI run and browser check 2026-11-15, end to end through the app with Playwright. Setup: local `npm run dev`, a temporary `trigger dev --env-file .env.local` worker on the default branch, a throwaway `+clerk_test` user, and a project created with Azure / Microservices / Finance.
+    - The spec 42 e-commerce prompt was sent from the AI sidebar. The run completed in about 45 s with 17 nodes, and MindMesh's reply described the Azure microservices design and the finance controls. It reported "Skipped 1 change that referred to missing nodes or edges".
+    - Liveblocks storage: 15 of 17 nodes carry a valid catalog `service`. The two without one are correctly null (Client and "PCI Scope Boundary"). Assignments:
+      - `azure.container-apps` for the four services
+      - `azure.functions` for Fraud Check
+      - `azure.sql` for the User, Order and Card Data DBs
+      - `azure.cosmos-db`, `azure.redis`, `azure.service-bus`, `azure.api-management`, `azure.entra-id`, `azure.key-vault`, `azure.blob-storage`
+      - The payment service now has its own Card Data DB.
+    - Browser: 15 badges rendered. Nodes whose label already names the service (e.g. "Catalog DB (Cosmos DB)") show only the provider badge.
+    - Fix made during the check: names that start with the provider ("Azure SQL", "Azure Functions", "Azure Cache for Redis") read "Azure | Azure SQL". `ServiceBadge` now shows the name without the provider prefix ("Azure | Functions") and uses the full name in the tooltip ("Azure SQL", not "Azure Azure SQL"). The name-in-label check uses the short name. Re-verified after a reload.
+    - Without boundaries (specs 68–69), the AI drew the PCI scope as an ordinary rectangle connected by an edge. Expected until 69.
+    - Cleanup: the project was deleted through `DELETE` (204), removing its room, canvas and TaskRun rows (0 left). The test user was deleted, and the worker and dev server processes stopped.
+
 ## In Progress
 
 - None.
 
 ## Next Up
-- Feature 33: Organization Roles (`context/feature-specs/33-organization-roles.md`)
+- Feature 68: Canvas Boundaries (`context/feature-specs/68-canvas-boundaries.md`), per the implementation order
 
 ## Roadmap
 
 Specs live in `context/feature-specs/`. Implement in number order; later specs depend on earlier ones.
 
+Billing and production hardening (specs 34–39) are deferred. The user decided on 2026-11-15 to skip Stripe and focus on functional features.
+
+**Implementation order:** 33, 40–43, then **68, 69, 70, 71**, then 44–67. Specs 68–71 were added on 2026-11-15 at the user's request:
+- 68–69 (boundaries) come before the templates (45) and spec generation (46) that use them.
+- 70–71 (research) build on the design-context work in 42. Specs 52, 53, 58, 59, 60, 64, 65, 66 and 67 each have a "Billing Deferred" section listing the usage-limit, plan, 402 and `lib/env.ts` parts to skip until billing returns.
+
 ### Phase 1: Production readiness
 - 30 Commercial scope context — Complete
 - 31 Clerk organizations — Complete
 - 32 Organization projects — Complete
-- 33 Organization roles — Not started
-- 34 Billing plans and checkout — Not started
-- 35 Stripe webhooks — Not started
-- 36 Usage limits — Not started
-- 37 Billing settings UI — Not started
-- 38 Error monitoring and environment validation — Not started
-- 39 Legal and trust pages — Not started
+- 33 Organization roles — Complete
+- 34 Billing plans and checkout — Deferred (billing postponed by the user, 2026-11-15)
+- 35 Stripe webhooks — Deferred
+- 36 Usage limits — Deferred
+- 37 Billing settings UI — Deferred
+- 38 Error monitoring and environment validation — Deferred
+- 39 Legal and trust pages — Deferred
 
 ### Phase 2: Segmentation and ease of use
-- 40 Design context model — Not started
-- 41 Design context setup UI — Not started
-- 42 Context-aware design agent — Not started
-- 43 Cloud service nodes — Not started
+- 40 Design context model — Complete
+- 41 Design context setup UI — Complete
+- 42 Context-aware design agent — Complete
+- 43 Cloud service nodes — Complete
+- 68 Canvas boundaries (dashed group outlines) — Not started (after 43)
+- 69 AI-drawn boundaries — Not started
+- 70 Design research backend (official docs via MCP and web search) — Not started
+- 71 Design research UI (toggle and sources) — Not started
 - 44 Template labels and filters — Not started
 - 45 Segmented template library — Not started
 - 46 Context-aware spec generation — Not started

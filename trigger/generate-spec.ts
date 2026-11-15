@@ -5,6 +5,7 @@ import { AbortTaskRunError, logger, metadata, schemaTask } from "@trigger.dev/sd
 import { del, put } from "@vercel/blob";
 import { generateText } from "ai";
 
+import { CLOUD_PROVIDER_BADGES, getCloudService } from "@/lib/cloud-services";
 import { prisma } from "@/lib/prisma";
 import { specBlobPath } from "@/lib/project-spec";
 import { generateSpecPayloadSchema, type GenerateSpecPayload, type TaskStatus } from "@/types/tasks";
@@ -98,7 +99,11 @@ function describeContext({ nodes, edges, chatHistory }: GenerateSpecPayload) {
   );
   const nameOf = (id: string) => names.get(id) ?? id;
 
-  const nodeLines = nodes.map((node) => `- ${nameOf(node.id)} (${node.data.shape})`);
+  const nodeLines = nodes.map((node) => {
+    const service = getCloudService(node.data.service);
+    const managed = service ? `, managed service: ${CLOUD_PROVIDER_BADGES[service.provider].label} ${service.name}` : "";
+    return `- ${nameOf(node.id)} (${node.data.shape}${managed})`;
+  });
   const edgeLines = edges.map((edge) => {
     const label = edge.data?.label?.trim();
     return `- ${nameOf(edge.source)} -> ${nameOf(edge.target)}${label ? `: ${label}` : ""}`;

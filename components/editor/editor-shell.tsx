@@ -4,6 +4,7 @@ import { useParams } from "next/navigation";
 import { useMemo, useRef, useState, type ReactNode } from "react";
 
 import { AiSidebar } from "@/components/editor/ai-sidebar";
+import { DesignContextDialog } from "@/components/editor/design-context-dialog";
 import { EditorNavbar } from "@/components/editor/editor-navbar";
 import { ProjectDialogs } from "@/components/editor/project-dialogs";
 import { ProjectSidebar } from "@/components/editor/project-sidebar";
@@ -15,6 +16,7 @@ import { CanvasSaveContext, type CanvasSaveStatus } from "@/hooks/use-canvas-aut
 import { CanvasImportContext, type ImportTemplate } from "@/hooks/use-canvas-import";
 import { ProjectActionsContext, useProjectActions } from "@/hooks/use-project-actions";
 import type { CanvasSnapshot } from "@/lib/canvas-snapshot";
+import { canManageProject } from "@/lib/project-roles";
 import type { ProjectSummary } from "@/lib/projects";
 
 interface EditorShellProps {
@@ -28,6 +30,9 @@ export function EditorShell({ ownedProjects, sharedProjects, children }: EditorS
   const [isAiSidebarOpen, setIsAiSidebarOpen] = useState(false);
   const [isShareOpen, setIsShareOpen] = useState(false);
   const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
+  const [isContextOpen, setIsContextOpen] = useState(false);
+  // Bumped on each open so the design-context dialog's draft starts from the saved value.
+  const [contextOpenCount, setContextOpenCount] = useState(0);
   // Filled by the canvas once its room is connected; see hooks/use-canvas-import.ts.
   const importTemplateRef = useRef<ImportTemplate | null>(null);
   const [saveStatus, setSaveStatus] = useState<CanvasSaveStatus>("idle");
@@ -68,6 +73,11 @@ export function EditorShell({ ownedProjects, sharedProjects, children }: EditorS
           onOpenTemplates={() => setIsTemplatesOpen(true)}
           saveStatus={saveStatus}
           onSave={() => saveCanvasRef.current?.()}
+          designContext={currentProject?.designContext}
+          onEditDesignContext={() => {
+            setContextOpenCount((count) => count + 1);
+            setIsContextOpen(true);
+          }}
         />
         {/* The canvas fills everything below the navbar; both sidebars float over it. */}
         <div className="relative min-h-0 flex-1">
@@ -105,10 +115,19 @@ export function EditorShell({ ownedProjects, sharedProjects, children }: EditorS
         <ShareDialog
           key={currentProject.id}
           projectId={currentProject.id}
-          // UI hint only; the collaborator APIs enforce ownership.
-          isOwner={ownedProjects.some((p) => p.id === currentProject.id)}
+          // UI hint only; the collaborator APIs enforce the role.
+          canManage={canManageProject(currentProject.role)}
           open={isShareOpen}
           onOpenChange={setIsShareOpen}
+        />
+      )}
+      {currentProject && (
+        <DesignContextDialog
+          key={`${currentProject.id}-${contextOpenCount}`}
+          projectId={currentProject.id}
+          value={currentProject.designContext}
+          open={isContextOpen}
+          onOpenChange={setIsContextOpen}
         />
       )}
       {currentProject && (

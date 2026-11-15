@@ -13,6 +13,7 @@ import {
 
 import { Button } from "@/components/ui/button";
 import type { CanvasSaveStatus } from "@/hooks/use-canvas-autosave";
+import { designContextLabels, type DesignContext } from "@/lib/design-context";
 
 interface EditorNavbarProps {
   isSidebarOpen: boolean;
@@ -25,6 +26,8 @@ interface EditorNavbarProps {
   onOpenTemplates?: () => void;
   saveStatus?: CanvasSaveStatus;
   onSave?: () => void;
+  designContext?: DesignContext;
+  onEditDesignContext?: () => void;
 }
 
 const SAVE_BUTTON = {
@@ -52,8 +55,11 @@ export function EditorNavbar({
   onOpenTemplates,
   saveStatus = "idle",
   onSave,
+  designContext,
+  onEditDesignContext,
 }: EditorNavbarProps) {
   const ToggleIcon = isSidebarOpen ? PanelLeftClose : PanelLeftOpen;
+  const contextLabels = designContext ? designContextLabels(designContext) : [];
   const saveButton = SAVE_BUTTON[saveStatus];
 
   return (
@@ -71,7 +77,26 @@ export function EditorNavbar({
         {projectName && (
           <>
             <h1 className="truncate text-sm font-medium text-copy-primary">{projectName}</h1>
-            <p className="text-xs text-copy-faint">Workspace</p>
+            {/* The design context as chips; opens the edit dialog. */}
+            <button
+              type="button"
+              onClick={onEditDesignContext}
+              aria-label={contextLabels.length > 0 ? `Design context: ${contextLabels.join(", ")}. Edit` : "Add design context"}
+              className="mt-0.5 flex max-w-full items-center gap-1 overflow-hidden rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {contextLabels.length > 0 ? (
+                contextLabels.map((label) => (
+                  <span
+                    key={label}
+                    className="shrink-0 rounded-full border border-surface-border bg-subtle px-2 py-px text-[11px] leading-4 text-copy-muted hover:text-copy-secondary"
+                  >
+                    {label}
+                  </span>
+                ))
+              ) : (
+                <span className="text-xs text-copy-faint hover:text-copy-secondary">Add design context</span>
+              )}
+            </button>
           </>
         )}
       </div>

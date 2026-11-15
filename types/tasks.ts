@@ -44,7 +44,12 @@ const SPEC_MAX_LABEL_LENGTH = 500;
 
 const specNodeSchema = z.object({
   id: z.string().min(1),
-  data: z.object({ label: z.string().max(SPEC_MAX_LABEL_LENGTH), shape: z.enum(NODE_SHAPES) }),
+  data: z.object({
+    label: z.string().max(SPEC_MAX_LABEL_LENGTH),
+    shape: z.enum(NODE_SHAPES),
+    // Managed cloud service ID (lib/cloud-services.ts); unknown IDs are ignored when describing the node.
+    service: z.string().max(80).optional(),
+  }),
 });
 
 const specEdgeSchema = z.object({

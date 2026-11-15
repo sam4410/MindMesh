@@ -33,6 +33,9 @@ export type CanvasNodeData = {
   // Label color paired with the fill; missing on nodes that still use the default pair.
   textColor?: string;
   shape: NodeShape;
+  // Managed cloud service ID from lib/cloud-services.ts (e.g. "azure.cosmos-db"). Optional so
+  // user-drawn nodes and templates without it stay valid.
+  service?: string;
 };
 
 export type CanvasNode = Node<CanvasNodeData, "canvasNode">;

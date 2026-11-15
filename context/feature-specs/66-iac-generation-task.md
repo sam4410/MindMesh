@@ -1,5 +1,14 @@
 Generate infrastructure-as-code (Terraform or Bicep) from the design, packaged as a zip in Vercel Blob. Backend only.
 
+## Billing Deferred
+
+Billing and usage limits (specs 34–39) are deferred. Until they are implemented:
+
+- skip the usage check in `POST /api/ai/iac`, the `IAC` `TaskRunKind` value, and the `iacRunsPerMonth` plan limit (they depend on specs 34 and 36)
+- infrastructure code is available to every workspace; there is no Team-only restriction
+- create the `TaskRun` record the same way the spec routes do today
+- ignore the "Free workspaces get 402" check
+
 ## Implementation
 
 1. Add the `IacBundle` model.

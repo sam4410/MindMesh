@@ -16,7 +16,7 @@ interface Collaborator {
 
 interface ShareDialogProps {
   projectId: string;
-  isOwner: boolean;
+  canManage: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
@@ -26,7 +26,7 @@ async function readError(res: Response) {
   return data?.error ?? `Request failed (${res.status})`;
 }
 
-export function ShareDialog({ projectId, isOwner, open, onOpenChange }: ShareDialogProps) {
+export function ShareDialog({ projectId, canManage, open, onOpenChange }: ShareDialogProps) {
   const [collaborators, setCollaborators] = useState<Collaborator[] | null>(null);
   const [email, setEmail] = useState("");
   const [isInviting, setIsInviting] = useState(false);
@@ -116,12 +116,12 @@ export function ShareDialog({ projectId, isOwner, open, onOpenChange }: ShareDia
       }}
       title="Share project"
       description={
-        isOwner
+        canManage
           ? "Invite people by email to collaborate on this project."
-          : "Only the project owner can manage access."
+          : "Only the owner or an admin can manage access."
       }
       footer={
-        isOwner ? (
+        canManage ? (
           <Button variant="outline" onClick={copyLink}>
             {copied ? <Check className="h-4 w-4" /> : <Link2 className="h-4 w-4" />}
             {copied ? "Copied!" : "Copy link"}
@@ -129,7 +129,7 @@ export function ShareDialog({ projectId, isOwner, open, onOpenChange }: ShareDia
         ) : undefined
       }
     >
-      {isOwner && (
+      {canManage && (
         <form onSubmit={invite} className="flex gap-2">
           <label htmlFor="invite-email" className="sr-only">
             Email address
@@ -179,7 +179,7 @@ export function ShareDialog({ projectId, isOwner, open, onOpenChange }: ShareDia
                     {c.email}
                   </p>
                 </div>
-                {isOwner && (
+                {canManage && (
                   <Button
                     variant="ghost"
                     size="icon-sm"

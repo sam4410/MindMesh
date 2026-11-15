@@ -1,5 +1,11 @@
 Show cost estimates in the AI sidebar, with per-component ranges, a total, and CSV export.
 
+## Billing Deferred
+
+Billing and usage limits (specs 34–39) are deferred. Until they are implemented:
+
+- skip the 402 upgrade message from spec 37; show the generic error message instead
+
 ## Implementation
 
 1. Add a Cost tab.

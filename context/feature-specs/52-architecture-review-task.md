@@ -1,5 +1,13 @@
 Add the backend for AI architecture reviews: an API route, a token route, and a Trigger.dev task that scores the design against the Well-Architected pillars and lists findings.
 
+## Billing Deferred
+
+Billing and usage limits (specs 34–39) are deferred. Until they are implemented:
+
+- skip the usage check in `POST /api/ai/review`, the new `TaskRunKind` value, and the `reviewRunsPerMonth` plan limit (they depend on specs 34 and 36)
+- create the `TaskRun` record the same way the spec routes do today
+- ignore the "Usage limits apply to reviews" check
+
 ## Implementation
 
 1. Define the result schema in `types/tasks.ts`.

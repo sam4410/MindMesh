@@ -1,14 +1,14 @@
-import { requireOwner } from "@/lib/project-access";
+import { requireProjectManager } from "@/lib/project-access";
 import { prisma } from "@/lib/prisma";
 
 type Context = RouteContext<"/api/projects/[projectId]/collaborators/[collaboratorId]">;
 
 export async function DELETE(_req: Request, ctx: Context) {
   const { projectId, collaboratorId } = await ctx.params;
-  const denied = await requireOwner(projectId);
+  const denied = await requireProjectManager(projectId);
   if (denied) return denied;
 
-  // Scoped to the project so an owner can't remove another project's collaborator by ID.
+  // Scoped to the project so a manager of one project can't remove another project's collaborator by ID.
   const { count } = await prisma.projectCollaborator.deleteMany({
     where: { id: collaboratorId, projectId },
   });

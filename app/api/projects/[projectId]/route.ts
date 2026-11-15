@@ -3,32 +3,43 @@ import { del, list } from "@vercel/blob";
 
 import { canvasBlobPath } from "@/lib/canvas-snapshot";
 import { getLiveblocks } from "@/lib/liveblocks";
-import { requireOwner } from "@/lib/project-access";
+import { getAccessibleProject, getCurrentIdentity, requireProjectManager } from "@/lib/project-access";
 import { specBlobFolder } from "@/lib/project-spec";
 import { readProjectInput } from "@/lib/project-input";
 import { prisma } from "@/lib/prisma";
 
 type Context = RouteContext<"/api/projects/[projectId]">;
 
+// Renames (owner or admin only) and/or updates the design context (anyone with access: it
+// describes the design, not project management).
 export async function PATCH(req: Request, ctx: Context) {
   const { projectId } = await ctx.params;
-  const denied = await requireOwner(projectId);
-  if (denied) return denied;
+  const identity = await getCurrentIdentity();
+  if (!identity) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
   const input = await readProjectInput(req);
   if ("error" in input) return Response.json({ error: input.error }, { status: 400 });
-  if (!input.name) return Response.json({ error: "name is required" }, { status: 400 });
+  if (!input.name && !input.designContext) {
+    return Response.json({ error: "name or designContext is required" }, { status: 400 });
+  }
+
+  if (input.name) {
+    const denied = await requireProjectManager(projectId);
+    if (denied) return denied;
+  } else if (!(await getAccessibleProject(projectId, identity))) {
+    return Response.json({ error: "Project not found" }, { status: 404 });
+  }
 
   const project = await prisma.project.update({
     where: { id: projectId },
-    data: { name: input.name },
+    data: { name: input.name, ...input.designContext },
   });
   return Response.json(project);
 }
 
 export async function DELETE(_req: Request, ctx: Context) {
   const { projectId } = await ctx.params;
-  const denied = await requireOwner(projectId, { allowDeletionPending: true });
+  const denied = await requireProjectManager(projectId, { allowDeletionPending: true });
   if (denied) return denied;
 
   const { count } = await prisma.project.updateMany({

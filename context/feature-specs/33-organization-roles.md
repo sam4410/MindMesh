@@ -4,7 +4,7 @@ Enforce roles on project management actions, so organization members can work on
 
 1. Add a role helper.
    - in `lib/project-access.ts` add `getProjectRole(project, identity)` returning `"owner" | "admin" | "member" | "collaborator"`:
-     - `owner`: `project.ownerId === identity.userId`
+     - `owner`: `project.ownerId === identity.userId`, and for an organization project the user must still be in its active organization
      - `admin`: organization project and `identity.orgRole === "org:admin"`
      - `member`: organization project and the user is in that organization
      - `collaborator`: access came through the collaborator email

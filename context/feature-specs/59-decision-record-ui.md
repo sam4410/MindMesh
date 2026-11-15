@@ -1,5 +1,11 @@
 Let users generate and browse decision records (ADRs) from the Specs tab.
 
+## Billing Deferred
+
+Billing and usage limits (specs 34–39) are deferred. Until they are implemented:
+
+- skip the 402 limit-reached message in `use-document-run`; keep the existing generic error notices
+
 ## Implementation
 
 1. Share the run-following logic.

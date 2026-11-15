@@ -14,7 +14,7 @@ Keep `Subscription` records in sync with Stripe through a signed webhook, so a c
 3. Handle these events.
    - `checkout.session.completed`: retrieve the subscription and sync it
    - `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`: sync the subscription
-   - sync means: find the `Subscription` row by `stripeCustomerId` and update `stripeSubscriptionId`, `status`, `seats` (item quantity), `currentPeriodEnd`, and `plan`
+   - sync means: find the `Subscription` row by `stripeCustomerId` and update `stripeSubscriptionId`, `status`, `seats` (item quantity), `currentPeriodEnd`, and `plan`; clear `stripeCheckoutSessionId` when the event synchronizes the subscription created by that Checkout Session
    - map the price ID to a plan: `STRIPE_PRICE_TEAM` → `TEAM`; a deleted or `canceled` subscription → `FREE`
    - if no row matches, create it using `billingAccountId` from the customer's metadata
    - ignore other event types and return 200
