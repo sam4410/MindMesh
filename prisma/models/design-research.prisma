@@ -1,0 +1,9 @@
+// Cached best-practice research for a design request (spec 70): notes and their sources, reused
+// for 7 days for the same design context and prompt.
+model DesignResearch {
+  id        String   @id @default(cuid())
+  cacheKey  String   @unique // SHA-256 of the design context plus the normalized prompt
+  notes     String
+  sources   Json // [{ title, url }]
+  createdAt DateTime @default(now())
+}

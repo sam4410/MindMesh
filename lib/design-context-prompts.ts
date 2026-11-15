@@ -37,9 +37,9 @@ const STYLE_RULES: Record<string, string> = {
 
 const INDUSTRY_RULES: Record<string, string> = {
   finance:
-    "Industry: finance. Required components: an audit log store, encryption key management, a fraud check in the payment flow, and a clearly labeled PCI scope boundary around payment and card data.",
+    'Industry: finance. Required components: an audit log store, encryption key management, and a fraud check in the payment flow. Add an addBoundary named "PCI scope" around the components that handle payment and card data.',
   healthcare:
-    "Industry: healthcare. Required components: a PHI data store isolated from other data, an audit log of every access to patient data, a consent service, and encryption key management.",
+    'Industry: healthcare. Required components: a PHI data store isolated from other data, an audit log of every access to patient data, a consent service, and encryption key management. Add an addBoundary named "PHI zone" around the components that store or process patient data.',
   ecommerce:
     "Industry: e-commerce. Required components: a catalog cache, product search, an external payment provider, and an order queue between ordering and fulfilment.",
   saas:

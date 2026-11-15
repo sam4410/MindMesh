@@ -16,6 +16,7 @@ import { CanvasSaveContext, type CanvasSaveStatus } from "@/hooks/use-canvas-aut
 import { CanvasImportContext, type ImportTemplate } from "@/hooks/use-canvas-import";
 import { ProjectActionsContext, useProjectActions } from "@/hooks/use-project-actions";
 import type { CanvasSnapshot } from "@/lib/canvas-snapshot";
+import type { DesignContext } from "@/lib/design-context";
 import { canManageProject } from "@/lib/project-roles";
 import type { ProjectSummary } from "@/lib/projects";
 
@@ -31,6 +32,9 @@ export function EditorShell({ ownedProjects, sharedProjects, children }: EditorS
   const [isShareOpen, setIsShareOpen] = useState(false);
   const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
   const [isContextOpen, setIsContextOpen] = useState(false);
+  const [savedContext, setSavedContext] = useState<{ projectId: string; value: DesignContext } | null>(
+    null
+  );
   // Bumped on each open so the design-context dialog's draft starts from the saved value.
   const [contextOpenCount, setContextOpenCount] = useState(0);
   // Filled by the canvas once its room is connected; see hooks/use-canvas-import.ts.
@@ -125,9 +129,14 @@ export function EditorShell({ ownedProjects, sharedProjects, children }: EditorS
         <DesignContextDialog
           key={`${currentProject.id}-${contextOpenCount}`}
           projectId={currentProject.id}
-          value={currentProject.designContext}
+          value={
+            savedContext?.projectId === currentProject.id
+              ? savedContext.value
+              : currentProject.designContext
+          }
           open={isContextOpen}
           onOpenChange={setIsContextOpen}
+          onSaved={(value) => setSavedContext({ projectId: currentProject.id, value })}
         />
       )}
       {currentProject && (

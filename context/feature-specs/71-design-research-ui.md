@@ -3,7 +3,7 @@ Let users turn on best-practice research for a design request, and show the docu
 ## Implementation
 
 1. Add the toggle.
-   - in `components/editor/ai-sidebar.tsx`, under the prompt textarea, add a small switch-style checkbox "Research best practices" with a help line: "Checks official cloud documentation first. Adds about 10–30 seconds."
+   - in `components/editor/ai-sidebar.tsx`, under the prompt textarea, add a small switch-style checkbox "Research best practices" with a help line: "Checks official cloud documentation first. Adds about 30–60 seconds." (changed from 10–30 s on 2026-11-16 to match measured research time)
    - send `research: true|false` with `POST /api/ai/design`
    - remember the choice per browser in `localStorage` (key `mindmesh:research`, wrapped in try/catch), default off
    - disable it while a run is active

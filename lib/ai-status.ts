@@ -1,4 +1,4 @@
-import type { TaskStatusMessage } from "@/types/tasks";
+import { CHAT_MESSAGE_MAX_LENGTH, type TaskStatusMessage } from "@/types/tasks";
 
 // How the design agent appears in presence; the color is --accent-ai-text from ui-context.md.
 export const AI_AGENT = {
@@ -7,11 +7,25 @@ export const AI_AGENT = {
   info: { name: "MindMesh", avatar: "", color: "#8b82ff" },
 } as const;
 
+// While waiting on a run, its status is also polled at this interval, because the realtime
+// "completed" update sometimes never reaches the browser (seen three times by 2026-11-15).
+export const RUN_POLL_INTERVAL_MS = 10_000;
+
 // The parts of a Trigger.dev realtime run that decide the final chat message.
-interface FinishedRun {
+export interface FinishedRun {
   isCompleted: boolean;
   isSuccess: boolean;
-  output?: { applied: number; skipped: number };
+  // sources: documents the research step used (spec 70); missing for runs without research.
+  output?: { applied: number; skipped: number; sources?: { title: string; url: string }[] };
+}
+
+// Appends "Sources:" with one "- Title (URL)" line each, dropping sources from the end so the
+// message stays within the chat limit.
+export function withSources(text: string, sources: readonly { title: string; url: string }[] = []) {
+  let lines = sources.map((source) => `- ${source.title} (${source.url})`);
+  const build = () => (lines.length ? `${text}\n\nSources:\n${lines.join("\n")}` : text);
+  while (lines.length && build().length > CHAT_MESSAGE_MAX_LENGTH) lines = lines.slice(0, -1);
+  return build().slice(0, CHAT_MESSAGE_MAX_LENGTH);
 }
 
 /**
@@ -26,9 +40,12 @@ export function designRunMessage(
 ): string | null {
   if (run?.isCompleted) {
     if (run.isSuccess) {
-      if (latest?.status === "completed" && latest.text) return latest.text;
       const applied = run.output?.applied ?? 0;
-      return `Done. Applied ${applied} ${applied === 1 ? "change" : "changes"} to the canvas.`;
+      const summary =
+        latest?.status === "completed" && latest.text
+          ? latest.text
+          : `Done. Applied ${applied} ${applied === 1 ? "change" : "changes"} to the canvas.`;
+      return withSources(summary, run.output?.sources);
     }
     if (latest?.status === "failed" && latest.text) return latest.text;
     return "The design run didn't finish. Any changes made before it stopped are still on the canvas. Try again.";

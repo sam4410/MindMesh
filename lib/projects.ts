@@ -31,7 +31,7 @@ export async function getProjectsForUser(identity: Identity) {
   const [owned, shared] = await Promise.all([
     prisma.project.findMany({
       where: orgId
-        ? { organizationId: orgId, deletionPending: false }
+        ? { organizationId: orgId }
         : { ownerId: userId, organizationId: null },
       orderBy: { createdAt: "desc" },
       select,

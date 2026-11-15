@@ -16,7 +16,7 @@ Let projects belong to an organization, so every member of the active organizati
      - organization workspace: "My Projects" shows every project with `organizationId = identity.orgId`
      - personal workspace: "My Projects" shows projects with `ownerId = identity.userId` and `organizationId = null`
      - "Shared" (collaborator by email) stays as it is in both workspaces
-   - exclude `deletionPending` projects as today
+   - keep deletion-pending organization projects in "My Projects" so an owner or admin can retry interrupted cleanup from the sidebar; leave the personal-workspace predicate and "Shared" filtering unchanged
 
 4. Grant access to organization members.
    - in `getAccessibleProject` (`lib/project-access.ts`) add `{ organizationId: identity.orgId }` to the `OR` list when `identity.orgId` is set

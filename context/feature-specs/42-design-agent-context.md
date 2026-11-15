@@ -33,7 +33,8 @@ Make the AI architect follow the project's design context, so an "Azure · Micro
    - **Project type:** what to focus the design on, e.g. data warehouse: sources → ingestion → raw storage → transformation → warehouse → BI; ML platform: feature store, training, model registry, serving, monitoring
 
 3. Use the rules in the agent.
-   - append the block to the user message in `planDesign` after the current canvas and before the request; leave `SYSTEM_PROMPT` unchanged
+   - append the block to the user message in `planDesign` after the current canvas and before the request
+   - make the generic service-separation and per-service database rules in `SYSTEM_PROMPT` conditional on the selected style; preserve the existing defaults when no style is selected and honor the monolith and modular-monolith deployment and database rules above
    - log the design context with the existing plan log
 
 ## Scope Limits

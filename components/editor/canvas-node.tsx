@@ -3,7 +3,7 @@ import { useState } from "react";
 
 import { NodeColorToolbar } from "@/components/editor/node-color-toolbar";
 import { ShapeGraphic } from "@/components/editor/shape-graphic";
-import { MIN_NODE_SIZE } from "@/lib/canvas-shapes";
+import { MAX_BOUNDARY_SIZE, MIN_NODE_SIZE } from "@/lib/canvas-shapes";
 import { CLOUD_PROVIDER_BADGES, getCloudService, type CloudService } from "@/lib/cloud-services";
 import { cn } from "@/lib/utils";
 import { DEFAULT_NODE_TEXT_COLOR, type CanvasEdge, type CanvasNode } from "@/types/canvas";
@@ -16,12 +16,18 @@ export function CanvasNodeView({ id, data, selected }: NodeProps<CanvasNode>) {
   const { updateNodeData } = useReactFlow<CanvasNode, CanvasEdge>();
   const [isEditing, setIsEditing] = useState(false);
   const service = getCloudService(data.service);
+  // A boundary outlines a group: label top-left, no connection handles, larger resize limit.
+  const isBoundary = data.shape === "boundary";
+  const textColor = data.textColor ?? DEFAULT_NODE_TEXT_COLOR;
 
   return (
     <div
-      style={{ color: data.textColor ?? DEFAULT_NODE_TEXT_COLOR }}
+      style={{ color: textColor }}
       // group: hovering the node fades its connection handles in.
-      className="group relative flex h-full w-full items-center justify-center text-center text-sm"
+      className={cn(
+        "group relative flex h-full w-full text-sm",
+        isBoundary ? "items-start justify-start p-2 text-left" : "items-center justify-center text-center"
+      )}
     >
       <NodeColorToolbar
         activeFill={data.color}
@@ -31,13 +37,16 @@ export function CanvasNodeView({ id, data, selected }: NodeProps<CanvasNode>) {
         isVisible={selected}
         minWidth={MIN_NODE_SIZE.width}
         minHeight={MIN_NODE_SIZE.height}
+        maxWidth={isBoundary ? MAX_BOUNDARY_SIZE.width : undefined}
+        maxHeight={isBoundary ? MAX_BOUNDARY_SIZE.height : undefined}
         lineClassName="border-brand/30!"
         handleClassName="h-2! w-2! rounded-sm! border-brand! bg-base!"
       />
-      <ShapeGraphic shape={data.shape} color={data.color} selected={selected} />
+      <ShapeGraphic shape={data.shape} color={data.color} textColor={textColor} selected={selected} />
       {/* After the shape so it doesn't paint over the inner half of each handle.
-          All handles are sources; loose connection mode lets any handle connect to any other. */}
-      {HANDLE_POSITIONS.map((position) => (
+          All handles are sources; loose connection mode lets any handle connect to any other.
+          Boundaries take no edges, so they get none. */}
+      {!isBoundary && HANDLE_POSITIONS.map((position) => (
         <Handle
           key={position}
           id={position}
@@ -47,16 +56,17 @@ export function CanvasNodeView({ id, data, selected }: NodeProps<CanvasNode>) {
         />
       ))}
 
-      <div className="relative flex max-w-full flex-col items-center gap-1">
+      <div className={cn("relative flex max-w-full flex-col gap-1", isBoundary ? "items-start" : "items-center")}>
       {/* The text (or placeholder) always sizes this box and only turns invisible while the
           textarea sits on top of it, so opening the editor and typing never shift the layout. */}
       <div
-        className={cn("relative max-w-full px-4", isEditing && "nodrag nopan")}
+        className={cn("relative max-w-full", isBoundary ? "px-2" : "px-4", isEditing && "nodrag nopan")}
         onDoubleClick={() => setIsEditing(true)}
       >
         <span
           className={cn(
             "block whitespace-pre-wrap break-words",
+            isBoundary && "text-xs font-medium",
             !data.label && "text-copy-faint",
             isEditing && "invisible"
           )}
@@ -84,7 +94,10 @@ export function CanvasNodeView({ id, data, selected }: NodeProps<CanvasNode>) {
               setIsEditing(false);
             }}
             // nodrag/nopan/nowheel: selecting text or scrolling must not move the node or canvas.
-            className="nodrag nopan nowheel absolute inset-0 resize-none overflow-hidden bg-transparent px-4 text-center outline-none placeholder:text-copy-faint"
+            className={cn(
+              "nodrag nopan nowheel absolute inset-0 resize-none overflow-hidden bg-transparent outline-none placeholder:text-copy-faint",
+              isBoundary ? "px-2 text-left text-xs font-medium" : "px-4 text-center"
+            )}
           />
         )}
       </div>

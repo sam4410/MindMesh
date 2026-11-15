@@ -61,6 +61,7 @@ import {
   type ShapeDragPayload,
 } from "@/lib/canvas-shapes";
 import {
+  BOUNDARY_Z_INDEX,
   DEFAULT_NODE_COLOR,
   NEW_EDGE_DEFAULTS,
   type CanvasEdge,
@@ -215,6 +216,7 @@ function Canvas() {
 
   function addShape(payload: ShapeDragPayload, point: { x: number; y: number }) {
     const { shape, width, height } = payload;
+    const isBoundary = shape === "boundary";
     // Centered on the point; going through onNodesChange syncs the node through Liveblocks.
     onNodesChange([
       {
@@ -225,7 +227,9 @@ function Canvas() {
           position: { x: point.x - width / 2, y: point.y - height / 2 },
           width,
           height,
-          data: { label: "", color: DEFAULT_NODE_COLOR, shape },
+          // Boundaries render behind nodes and edges, so components dropped on them stay on top.
+          ...(isBoundary && { zIndex: BOUNDARY_Z_INDEX }),
+          data: { label: isBoundary ? "Boundary" : "", color: DEFAULT_NODE_COLOR, shape },
         },
       },
     ]);

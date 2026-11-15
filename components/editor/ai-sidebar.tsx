@@ -5,6 +5,7 @@ import { useRealtimeRun } from "@trigger.dev/react-hooks";
 import { Bot, Loader2, SendHorizontal, X } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 
+import { RunPoller } from "@/components/editor/run-poller";
 import { SpecsTab } from "@/components/editor/specs-tab";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -12,7 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import type { ChatEntry } from "@/hooks/use-ai-chat";
 import type { AiActivity } from "@/hooks/use-ai-status";
-import { designRunMessage } from "@/lib/ai-status";
+import { designRunMessage, type FinishedRun } from "@/lib/ai-status";
 import type { CanvasSnapshot } from "@/lib/canvas-snapshot";
 import { postJson } from "@/lib/post-json";
 import { cn } from "@/lib/utils";
@@ -33,6 +34,28 @@ const TAB_TRIGGER =
 
 // Hours and minutes in the viewer's locale, e.g. "3:42 PM".
 const TIME_FORMAT = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
+const RESEARCH_STORAGE_KEY = "mindmesh:research";
+// Trailing ")" is excluded so "Title (https://…)" source lines link cleanly.
+const URL_PATTERN = /(https?:\/\/[^\s)]+)/g;
+
+// Assistant messages are plain text; only their http(s) URLs become links (e.g. research sources).
+function linkify(text: string) {
+  return text.split(URL_PATTERN).map((part, index) =>
+    index % 2 === 1 ? (
+      <a
+        key={index}
+        href={part}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="break-all text-ai-text underline underline-offset-2 hover:opacity-80"
+      >
+        {part}
+      </a>
+    ) : (
+      part
+    )
+  );
+}
 
 type SendMessage = (content: string, role?: ChatMessage["role"]) => Promise<void>;
 
@@ -158,7 +181,29 @@ function ArchitectTab({ projectId, messages, onSend, activity }: ArchitectTabPro
   const [isSending, setIsSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [activeRun, setActiveRun] = useState<ActiveRun | null>(null);
+  // Research best practices before designing (spec 70); off by default, remembered per browser.
+  const [research, setResearch] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // Read after mount: the sidebar also renders on the server, where localStorage doesn't exist.
+  useEffect(() => {
+    try {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time sync from browser storage
+      setResearch(localStorage.getItem(RESEARCH_STORAGE_KEY) === "true");
+    } catch {
+      // Storage can be blocked (private mode, disabled site data); the toggle just starts off.
+    }
+  }, []);
+
+  function toggleResearch() {
+    const next = !research;
+    setResearch(next);
+    try {
+      localStorage.setItem(RESEARCH_STORAGE_KEY, String(next));
+    } catch {
+      // Not remembered, but this session still uses the choice.
+    }
+  }
   const endRef = useRef<HTMLLIElement>(null);
   // Read when the run ends, so the final message can reuse the agent's own summary.
   const latestStatus = useRef(activity.latest);
@@ -172,19 +217,23 @@ function ArchitectTab({ projectId, messages, onSend, activity }: ArchitectTabPro
     latestStatus.current = activity.latest;
   }, [activity.latest]);
 
+  // Called by the realtime subscription and by the polling fallback; the first to see the run
+  // finish posts the final message, once.
+  const finishRun = (run: (FinishedRun & { id: string }) | undefined, err?: Error) => {
+    const message = designRunMessage(run, err, latestStatus.current);
+    if (!message) return;
+    if (run && finishedRunId.current === run.id) return;
+    if (run) finishedRunId.current = run.id;
+    // Everyone in the room sees the outcome in ai-chat; the canvas already updated through Liveblocks.
+    void onSend(message, "assistant").catch((sendErr: unknown) => console.error(sendErr));
+    setActiveRun(null);
+  };
+
   useRealtimeRun<typeof designAgent>(activeRun?.runId, {
     accessToken: activeRun?.publicToken,
     enabled: activeRun !== null,
     skipColumns: ["payload"],
-    onComplete: (run, err) => {
-      const message = designRunMessage(run, err, latestStatus.current);
-      if (!message) return;
-      if (run && finishedRunId.current === run.id) return;
-      if (run) finishedRunId.current = run.id;
-      // Everyone in the room sees the outcome in ai-chat; the canvas already updated through Liveblocks.
-      void onSend(message, "assistant").catch((sendErr: unknown) => console.error(sendErr));
-      setActiveRun(null);
-    },
+    onComplete: (run, err) => finishRun(run, err),
   });
 
   useEffect(() => {
@@ -218,6 +267,7 @@ function ArchitectTab({ projectId, messages, onSend, activity }: ArchitectTabPro
         prompt,
         roomId: projectId,
         projectId,
+        research,
       }));
     } catch (err) {
       console.error(err);
@@ -254,6 +304,13 @@ function ArchitectTab({ projectId, messages, onSend, activity }: ArchitectTabPro
 
   return (
     <>
+      {activeRun && (
+        <RunPoller<typeof designAgent>
+          runId={activeRun.runId}
+          accessToken={activeRun.publicToken}
+          onComplete={finishRun}
+        />
+      )}
       <ScrollArea className="min-h-0 flex-1">
         {messages.length === 0 ? (
           <div className="flex flex-col items-center gap-4 px-6 py-10 text-center">
@@ -303,7 +360,7 @@ function ArchitectTab({ projectId, messages, onSend, activity }: ArchitectTabPro
                         : "border border-surface-border bg-elevated text-copy-primary"
                     )}
                   >
-                    {message.content}
+                    {message.role === "assistant" ? linkify(message.content) : message.content}
                   </p>
                 </li>
               );
@@ -319,7 +376,8 @@ function ArchitectTab({ projectId, messages, onSend, activity }: ArchitectTabPro
           {sendError}
         </p>
       )}
-      <form onSubmit={send} className="flex items-end gap-2 border-t border-surface-border p-3">
+      <form onSubmit={send} className="flex flex-col gap-2 border-t border-surface-border p-3">
+        <div className="flex items-end gap-2">
         {/* field-sizing-content (from the shadcn Textarea) grows it between the min and max.
             Disabled, not cleared, while a run is active, so a draft survives the wait. */}
         <Textarea
@@ -343,6 +401,38 @@ function ArchitectTab({ projectId, messages, onSend, activity }: ArchitectTabPro
         >
           {isBusy ? <Loader2 className="animate-spin" /> : <SendHorizontal />}
         </Button>
+        </div>
+        <div className="flex items-start gap-2.5 px-1">
+          <button
+            type="button"
+            role="switch"
+            aria-checked={research}
+            aria-labelledby="research-toggle-label"
+            aria-describedby="research-toggle-help"
+            onClick={toggleResearch}
+            disabled={isRunActive}
+            className={cn(
+              "relative mt-0.5 inline-flex h-4 w-7 shrink-0 items-center rounded-full border border-surface-border transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50",
+              research ? "bg-accent-green" : "bg-subtle"
+            )}
+          >
+            <span
+              aria-hidden
+              className={cn(
+                "inline-block h-3 w-3 rounded-full bg-copy-primary shadow transition-transform",
+                research ? "translate-x-3.5" : "translate-x-0.5"
+              )}
+            />
+          </button>
+          <div className="min-w-0 text-xs leading-4">
+            <span id="research-toggle-label" className="font-medium text-copy-secondary">
+              Research best practices
+            </span>
+            <p id="research-toggle-help" className="text-copy-faint">
+              Checks official cloud documentation first. Adds about 30–60 seconds.
+            </p>
+          </div>
+        </div>
       </form>
     </>
   );
