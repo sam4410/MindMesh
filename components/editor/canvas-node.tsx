@@ -4,7 +4,7 @@ import { useState } from "react";
 import { NodeColorToolbar } from "@/components/editor/node-color-toolbar";
 import { ShapeGraphic } from "@/components/editor/shape-graphic";
 import { MAX_BOUNDARY_SIZE, MIN_NODE_SIZE } from "@/lib/canvas-shapes";
-import { CLOUD_PROVIDER_BADGES, getCloudService, type CloudService } from "@/lib/cloud-services";
+import { CLOUD_PROVIDER_BADGES, getCloudService, serviceFullName, type CloudService } from "@/lib/cloud-services";
 import { cn } from "@/lib/utils";
 import { DEFAULT_NODE_TEXT_COLOR, type CanvasEdge, type CanvasNode } from "@/types/canvas";
 
@@ -114,7 +114,7 @@ function ServiceBadge({ service, label }: { service: CloudService; label: string
   // "Azure SQL" next to an "Azure" badge reads as "Azure | SQL", not "Azure | Azure SQL".
   const prefix = `${badge.label} `;
   const shortName = service.name.startsWith(prefix) ? service.name.slice(prefix.length) : service.name;
-  const fullName = service.name.startsWith(prefix) ? service.name : `${prefix}${service.name}`;
+  const fullName = serviceFullName(service);
   const showName = !label.toLowerCase().includes(shortName.toLowerCase());
   return (
     <span className="flex max-w-full items-center gap-1 px-2 text-[10px] leading-3" title={fullName}>

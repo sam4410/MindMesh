@@ -3,20 +3,43 @@
 import { Download } from "lucide-react";
 import { useState } from "react";
 
+import { DesignContextFields } from "@/components/editor/design-context-fields";
 import { EditorDialog } from "@/components/editor/editor-dialog";
 import { ShapeGraphic } from "@/components/editor/shape-graphic";
-import { CANVAS_TEMPLATES, type CanvasTemplate } from "@/components/editor/starter-templates";
+import {
+  CANVAS_TEMPLATES,
+  templateMatches,
+  type CanvasTemplate,
+} from "@/components/editor/starter-templates";
 import { Button } from "@/components/ui/button";
+import {
+  EMPTY_DESIGN_CONTEXT,
+  designContextLabels,
+  type DesignContext,
+} from "@/lib/design-context";
 import { EDGE_COLOR } from "@/types/canvas";
 
 interface StarterTemplatesModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onImport: (template: CanvasTemplate) => boolean;
+  // The project's design context; the filters start from it. Mount with a key that changes on
+  // open so they reset each time.
+  designContext: DesignContext;
 }
 
-export function StarterTemplatesModal({ open, onOpenChange, onImport }: StarterTemplatesModalProps) {
+const FILTER_LABELS = { cloudProvider: "Cloud", architectureStyle: "Style", projectType: "Project type" };
+
+export function StarterTemplatesModal({
+  open,
+  onOpenChange,
+  onImport,
+  designContext,
+}: StarterTemplatesModalProps) {
   const [importError, setImportError] = useState<string | null>(null);
+  const [filters, setFilters] = useState(designContext);
+  const templates = CANVAS_TEMPLATES.filter((template) => templateMatches(template, filters));
+  const hasFilters = Object.values(filters).some(Boolean);
 
   return (
     <EditorDialog
@@ -29,8 +52,29 @@ export function StarterTemplatesModal({ open, onOpenChange, onImport }: StarterT
       description="Importing a template replaces everything on the canvas. You can undo it."
       className="sm:max-w-3xl"
     >
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+        <DesignContextFields
+          idPrefix="template-filter"
+          value={filters}
+          onChange={setFilters}
+          emptyLabel="All"
+          fieldLabels={FILTER_LABELS}
+          className="flex-1 grid-cols-2 sm:grid-cols-4"
+        />
+        <Button
+          variant="outline"
+          className="rounded-xl"
+          disabled={!hasFilters}
+          onClick={() => setFilters(EMPTY_DESIGN_CONTEXT)}
+        >
+          Clear filters
+        </Button>
+      </div>
+      {templates.length === 0 && (
+        <p className="py-10 text-center text-sm text-copy-muted">No templates match these filters.</p>
+      )}
       <ul className="grid max-h-[60vh] gap-3 overflow-y-auto sm:grid-cols-2">
-        {CANVAS_TEMPLATES.map((template) => (
+        {templates.map((template) => (
           <li
             key={template.id}
             className="flex flex-col gap-3 rounded-2xl border border-surface-border bg-surface p-3"
@@ -39,6 +83,16 @@ export function StarterTemplatesModal({ open, onOpenChange, onImport }: StarterT
             <div className="flex-1 space-y-1">
               <h3 className="text-sm font-medium text-copy-primary">{template.name}</h3>
               <p className="text-xs text-copy-muted">{template.description}</p>
+              <ul aria-label="Labels" className="flex flex-wrap gap-1 pt-1">
+                {designContextLabels({ ...EMPTY_DESIGN_CONTEXT, ...template.labels }).map((label) => (
+                  <li
+                    key={label}
+                    className="rounded-full border border-surface-border bg-subtle px-2 py-px text-[11px] leading-4 text-copy-muted"
+                  >
+                    {label}
+                  </li>
+                ))}
+              </ul>
             </div>
             <Button
               className="rounded-xl"

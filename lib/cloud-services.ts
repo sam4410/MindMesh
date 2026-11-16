@@ -97,6 +97,13 @@ export const CLOUD_PROVIDER_BADGES: Record<CloudProvider, { label: string; color
   gcp: { label: "GCP", color: "#4285F4" },
 };
 
+// The provider plus the service, without doubling a name that already has it: "AWS Lambda",
+// "Azure SQL" (not "Azure Azure SQL").
+export function serviceFullName(service: CloudService) {
+  const prefix = `${CLOUD_PROVIDER_BADGES[service.provider].label} `;
+  return service.name.startsWith(prefix) ? service.name : `${prefix}${service.name}`;
+}
+
 export function getCloudService(id: string | undefined | null): CloudService | undefined {
   return id ? CLOUD_SERVICES.find((service) => service.id === id) : undefined;
 }

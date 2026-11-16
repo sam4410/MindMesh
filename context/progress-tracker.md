@@ -6,7 +6,7 @@ Update this file whenever the current phase, active feature, or implementation s
 - Commercial roadmap, Phase 2 (Segmentation and ease of use). Features 40–43 and 68–71 complete; 34–39 deferred.
 
 ## Current Goal
-- Feature 44: Template Labels and Filters
+- Feature 47: Contextual Prompt Suggestions
 
 ## Completed
 
@@ -499,13 +499,83 @@ Update this file whenever the current phase, active feature, or implementation s
     - With the interval: checks ran every 10 s throughout. The design run finished at 20:29:05.6 and the reply appeared at 20:29:08.2 (2.6 s). The spec run finished at 20:29:33.1 and the spinner cleared at 20:29:36.5 (3.4 s), with the spec list gaining the new spec.
     - With realtime unblocked (both rounds), a design run produced exactly one reply, with no duplicate 15 s later.
     - Test projects and Clerk test users deleted; test processes stopped.
+- Feature 44: Template Labels and Filters (2026-11-16).
+  - **Labels:** `CanvasTemplate` in `components/editor/starter-templates.ts` has `labels: Partial<DesignContext>`. Microservices: agnostic, microservices, backend-platform. CI/CD pipeline: agnostic, cicd-pipeline. Event-driven system: agnostic, event-driven, backend-platform.
+  - **Matching:** `templateMatches(template, filters)` in the same file. Every set filter must equal the template's label; a missing label doesn't match, except `agnostic` templates match any cloud filter.
+  - **Filters:** `starter-templates-modal.tsx` takes a `designContext` prop and starts its filter state from it. The filter row reuses `DesignContextFields`, which gained optional `emptyLabel` ("All" here, "Not set" by default), `fieldLabels` (Cloud, Style, Industry, Project type) and `className` (four columns). A "Clear filters" button (disabled when nothing is set) resets them, and an empty state reads "No templates match these filters."
+  - **Wiring:** `editor-shell.tsx` keys the modal on `templates-${projectId}-${templatesOpenCount}`, bumped on each open, so the filters reset to the project's context every time and aren't persisted. A new `currentContext` (a context saved this session wins over the server props) feeds both this modal and the design-context dialog.
+  - **Chips:** each card lists its labels under the description, using `designContextLabels`, styled like the navbar context chip.
+  - Import and previews unchanged.
+  - Verified: TypeScript, ESLint and `npm run build` clean. A temporary `node:test` (7 cases: no filters, any cloud matching agnostic, style, missing industry label, project type, combined) passed and was removed.
+  - Browser test, 2026-11-16, Playwright, on a project with context Azure + Microservices:
+    - The gallery opened with Cloud = Azure and Style = Microservices, showing only Microservices (the agnostic label matched Azure), with chips "Cloud-agnostic", "Microservices", "Backend platform".
+    - "Clear filters" showed all three templates, each with its chips, and then disabled itself. Industry = Finance showed "No templates match these filters."
+    - Closing and reopening reset the filters to Azure + Microservices.
+    - Importing CI/CD and then Microservices left exactly the 8 Microservices nodes and 8 edges, so import still replaces the canvas.
+    - Found and fixed: the modal's key (`${projectId}-0`) collided with the design-context dialog's sibling key, raising React's duplicate-key warning on every editor load. The `templates-` prefix removed it (0 warnings after reload).
+    - Test project and Clerk test user deleted; test processes stopped.
+- Feature 45: Segmented Template Library (2026-11-16).
+  - **Layout:** templates live in `components/editor/templates/`, one file each, with `index.ts` exporting `CANVAS_TEMPLATES` (general patterns first, then the six segment templates). `starter-templates.ts` re-exports `CanvasTemplate` and `CANVAS_TEMPLATES` and keeps `templateMatches`, so existing imports are unchanged.
+  - **Helpers** (`templates/helpers.ts`, which also holds `CanvasTemplate` and the role colors):
+    - `node(id, label, shape, column, row, color, service?)` centers a default-size shape in a cell of the AI grid (`GRID`, 280 × 160).
+    - `edge(source, target, label)` takes node objects and picks facing handles: left-to-right between columns, top-to-bottom within one.
+    - `boundary(id, label, members, color)` pads the way `addBoundary` does; `BOUNDARY_PADDING` and `BOUNDARY_LABEL_SPACE` are now exported from `lib/design-actions.ts`.
+  - **Existing templates:** the original three were moved to the grid in the same arrangement, with the same nodes, colors and edge labels.
+  - **New templates**, each with all applicable labels, labelled edges and role colors:
+    - Azure microservices e-commerce: 13 nodes, Azure services on every cloud node.
+    - AWS serverless SaaS API: 14 nodes.
+    - GCP data warehouse: 10 nodes.
+    - Payments platform: 11 including a red "PCI zone" boundary around the payment service and tokenization vault.
+    - Patient records system: 10 including a "PHI zone" boundary isolating the PHI database.
+    - ML platform: 9 nodes.
+  - **Services:** IDs come from `lib/cloud-services.ts`. Nodes with no catalog entry (Dataflow, Looker, the ML feature store, training jobs, model registry) have no `service`, so no badge.
+  - **Ordering:** boundaries come first in `nodes` so the gallery preview draws them underneath; on the canvas, `zIndex -1` handles it.
+  - Verified: TypeScript, ESLint and `npm run build` clean. A temporary `node:test` (11 tests, removed) checked:
+    - 9 templates, all labelled
+    - 8–15 nodes each, unique node and edge IDs, edges pointing at existing nodes
+    - every new edge labelled
+    - every service ID known and from the template's cloud
+    - no overlapping nodes, and each boundary enclosing exactly its members
+    - Azure filter returns the Azure template plus the five agnostic ones; finance returns payments only; data warehouse returns GCP only
+  - Browser test, 2026-11-16, Playwright, on a project without design context:
+    - The gallery showed 9 cards with the expected chips, and each preview drew one line per edge; the PCI and PHI zones show as outlines.
+    - Filtering through the selects: Azure showed the Azure template plus the five agnostic ones, Finance showed Payments platform only, Data warehouse showed GCP data warehouse only, and clearing restored all 9.
+    - Importing each of the 9 templates in turn matched the expected nodes, edges and provider badges exactly (Azure 12, AWS 13, GCP 5, ML 4, others 0), with each edge label rendered and the PCI/PHI boundaries at `zIndex -1`.
+    - Fixed after reviewing screenshots: "Customers" (Azure, Payments) and "App Clickstream" (GCP) broke mid-word in 100 px circles, so they became "Shoppers", "Buyers" and "App Events"; "PaymentCaptured" broke mid-word in a short gap, so it became "payment captured". Re-checked all six new templates on the canvas after the fix.
+    - Known minor: in Patient records, the "access log" edge brushes the PHI zone's lower-left corner.
+    - Test project and Clerk test user deleted; test processes stopped.
+- Feature 46: Context-Aware Spec Generation (2026-11-16).
+  - **Payload:** `POST /api/ai/spec` adds `designContext: getDesignContext(project)` from the project row. `generateSpecPayloadSchema` (`types/tasks.ts`) extends the request schema with `designContext: designContextSchema`, while `specRequestSchema` doesn't have it, so a client-sent context is dropped.
+  - **Helper:** `buildSpecContextSections(ctx)` in `lib/design-context-prompts.ts` returns "" when no field is set, so a project without context gets the same prompt structure. Otherwise it asks for a `**Context:** <formatDesignContext>` line under the title, then these sections after Non-Functional Requirements and before Assumptions and Open Questions:
+    - Cloud Services (AWS, Azure, Google Cloud): a Component | Managed service | Why it was chosen table that uses node `service` values, with other suggestions marked "(proposed)".
+    - Compliance and Data Protection: finance PCI-DSS and SOC 2; healthcare HIPAA; public sector data residency and accessibility. It covers components in scope (using boundaries) and the required controls: encryption, audit logging, access control, retention. It explicitly forbids stating or implying certification.
+    - Data Pipeline (data-warehouse), Model Lifecycle (ml-platform) and Deployment Pipeline (cicd-pipeline).
+  - **Prompt:** `trigger/generate-spec.ts` appends the helper's text after the team chat. `SYSTEM_PROMPT` gained one line: add the line and sections the request asks for, and keep the fixed sections in order.
+  - Verified: TypeScript, ESLint and `npm run build` clean. `trigger dev` built the change as worker version 20261116.1. Temporary `node:test` cases passed and were removed. They covered:
+    - empty context gives ""
+    - Azure + Microservices + Finance gives the Context line, Cloud Services and PCI-DSS with the no-certification rule
+    - GCP data warehouse gives Data Pipeline
+    - agnostic healthcare gives HIPAA and no cloud table
+    - the public sector, ML and CI/CD branches
+    - a style-only context gives just the Context line
+    - the payload schema requires a valid context, and the request schema drops one
+  - Live test, 2026-11-16, Playwright plus a local worker, Gemini `gemini-3.5-flash`:
+    - Azure + Microservices + Finance project with the Azure e-commerce template (64 s):
+      - The spec had `**Context:** Azure · Microservices · Finance` under the title, and the 7 fixed sections in order, then Cloud Services and Compliance and Data Protection before Assumptions.
+      - The table used the nodes' Azure services.
+      - Compliance named PCI-DSS and SOC 2, scoped the payment and order components, and listed all four controls.
+      - A search for "is … compliant" or "certified" claims found none.
+    - GCP data warehouse project with the GCP template (55 s): Context line, Cloud Services (Dataflow and Looker marked "(proposed)"), Data Pipeline with sources, ingestion frequency, layers and quality checks, and no Compliance section.
+    - Found and fixed (dated from spec 43): node lines named services as provider + name, so the spec said "Azure Azure SQL", "Azure Azure Monitor" and "Azure Azure Cache for Redis". `serviceFullName(service)` in `lib/cloud-services.ts` (the canvas badge's existing prefix rule) now serves both `generate-spec.ts` and the `ServiceBadge` tooltip. A check over all 48 catalog services found no doubled prefix; the worker rebuilt it as 20261116.4. Not re-run against Gemini.
+    - The no-context case wasn't generated live. Offline, the helper returns "" and the prompt only gains the one conditional system line.
+    - Test projects and Clerk test user deleted; test processes stopped.
 
 ## In Progress
 
 - None.
 
 ## Next Up
-- Feature 44: Template Labels and Filters (`context/feature-specs/44-template-labels-filters.md`)
+- Feature 47: Contextual Prompt Suggestions (`context/feature-specs/47-contextual-prompt-suggestions.md`)
 
 ## Roadmap
 
@@ -538,9 +608,9 @@ Billing and production hardening (specs 34–39) are deferred. The user decided 
 - 69 AI-drawn boundaries — Complete
 - 70 Design research backend (official docs via MCP and web search) — Complete
 - 71 Design research UI (toggle and sources) — Complete
-- 44 Template labels and filters — Not started
-- 45 Segmented template library — Not started
-- 46 Context-aware spec generation — Not started
+- 44 Template labels and filters — Complete
+- 45 Segmented template library — Complete
+- 46 Context-aware spec generation — Complete
 - 47 Contextual prompt suggestions — Not started
 - 48 Node AI actions — Not started
 - 49 Onboarding walkthrough — Not started

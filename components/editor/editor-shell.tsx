@@ -16,7 +16,7 @@ import { CanvasSaveContext, type CanvasSaveStatus } from "@/hooks/use-canvas-aut
 import { CanvasImportContext, type ImportTemplate } from "@/hooks/use-canvas-import";
 import { ProjectActionsContext, useProjectActions } from "@/hooks/use-project-actions";
 import type { CanvasSnapshot } from "@/lib/canvas-snapshot";
-import type { DesignContext } from "@/lib/design-context";
+import { EMPTY_DESIGN_CONTEXT, type DesignContext } from "@/lib/design-context";
 import { canManageProject } from "@/lib/project-roles";
 import type { ProjectSummary } from "@/lib/projects";
 
@@ -31,6 +31,8 @@ export function EditorShell({ ownedProjects, sharedProjects, children }: EditorS
   const [isAiSidebarOpen, setIsAiSidebarOpen] = useState(false);
   const [isShareOpen, setIsShareOpen] = useState(false);
   const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
+  // Bumped on each open so the template filters start from the project's context again.
+  const [templatesOpenCount, setTemplatesOpenCount] = useState(0);
   const [isContextOpen, setIsContextOpen] = useState(false);
   const [savedContext, setSavedContext] = useState<{ projectId: string; value: DesignContext } | null>(
     null
@@ -59,6 +61,11 @@ export function EditorShell({ ownedProjects, sharedProjects, children }: EditorS
   const currentProject = [...ownedProjects, ...sharedProjects].find(
     (project) => project.id === roomId && !project.deletionPending
   );
+  // A context saved in this session wins over the server props until they refresh.
+  const currentContext =
+    savedContext && savedContext.projectId === currentProject?.id
+      ? savedContext.value
+      : (currentProject?.designContext ?? EMPTY_DESIGN_CONTEXT);
 
   return (
     <ProjectActionsContext value={actions}>
@@ -74,7 +81,10 @@ export function EditorShell({ ownedProjects, sharedProjects, children }: EditorS
           isAiSidebarOpen={isAiSidebarOpen}
           onToggleAiSidebar={() => setIsAiSidebarOpen((open) => !open)}
           onShare={() => setIsShareOpen(true)}
-          onOpenTemplates={() => setIsTemplatesOpen(true)}
+          onOpenTemplates={() => {
+            setTemplatesOpenCount((count) => count + 1);
+            setIsTemplatesOpen(true);
+          }}
           saveStatus={saveStatus}
           onSave={() => saveCanvasRef.current?.()}
           designContext={currentProject?.designContext}
@@ -129,11 +139,7 @@ export function EditorShell({ ownedProjects, sharedProjects, children }: EditorS
         <DesignContextDialog
           key={`${currentProject.id}-${contextOpenCount}`}
           projectId={currentProject.id}
-          value={
-            savedContext?.projectId === currentProject.id
-              ? savedContext.value
-              : currentProject.designContext
-          }
+          value={currentContext}
           open={isContextOpen}
           onOpenChange={setIsContextOpen}
           onSaved={(value) => setSavedContext({ projectId: currentProject.id, value })}
@@ -141,6 +147,8 @@ export function EditorShell({ ownedProjects, sharedProjects, children }: EditorS
       )}
       {currentProject && (
         <StarterTemplatesModal
+          key={`templates-${currentProject.id}-${templatesOpenCount}`}
+          designContext={currentContext}
           open={isTemplatesOpen}
           onOpenChange={setIsTemplatesOpen}
           onImport={(template) => {

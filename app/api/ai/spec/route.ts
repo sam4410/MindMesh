@@ -1,6 +1,7 @@
 import { runs, tasks } from "@trigger.dev/sdk";
 import { z } from "zod";
 
+import { getDesignContext } from "@/lib/design-context";
 import { getAccessibleProject, getCurrentIdentity } from "@/lib/project-access";
 import { prisma } from "@/lib/prisma";
 import type { generateSpec } from "@/trigger/generate-spec";
@@ -30,6 +31,7 @@ export async function POST(req: Request) {
       chatHistory,
       nodes,
       edges,
+      designContext: getDesignContext(project),
     }));
   } catch (err) {
     console.error("Failed to start spec task", err);

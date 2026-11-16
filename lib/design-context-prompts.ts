@@ -1,5 +1,5 @@
 import { CLOUD_SERVICE_ROLES, cloudServicesFor } from "@/lib/cloud-services";
-import type { DesignContext } from "@/lib/design-context";
+import { formatDesignContext, type DesignContext } from "@/lib/design-context";
 
 const PROVIDER_NAMES = { aws: "AWS", azure: "Azure", gcp: "Google Cloud" } as const;
 
@@ -75,4 +75,58 @@ export function buildDesignContextRules(ctx: DesignContext): string {
   ].filter((rule): rule is string => Boolean(rule));
   if (rules.length === 0) return "";
   return `Design context (the project's settings; follow these rules, and include their required components even when the request doesn't name them):\n${rules.map((rule) => `- ${rule}`).join("\n")}`;
+}
+
+// Frameworks named in a spec's compliance section, per regulated industry.
+const COMPLIANCE_FRAMEWORKS: Record<string, string> = {
+  finance: "PCI-DSS and SOC 2",
+  healthcare: "HIPAA",
+  "public-sector": "data residency and accessibility requirements",
+};
+
+const PROJECT_TYPE_SECTIONS: Record<string, string> = {
+  "data-warehouse":
+    "## Data Pipeline: the sources, how often each is ingested (batch or streaming, and how frequently), the transformation layers (for example raw, cleaned, curated), and the data quality checks at each layer.",
+  "ml-platform":
+    "## Model Lifecycle: training (data, schedule, compute), evaluation (metrics and the bar a model must pass), the model registry and versioning, deployment and rollback, and monitoring including data and prediction drift.",
+  "cicd-pipeline":
+    "## Deployment Pipeline: the stages in order, the environments, the approvals needed to promote a release, and how a release is rolled back.",
+};
+
+/**
+ * Extra instructions for the spec generator (spec 46), or "" when no design context is set, so a
+ * project without context gets exactly the standard structure.
+ */
+export function buildSpecContextSections(ctx: DesignContext): string {
+  const summary = formatDesignContext(ctx);
+  if (!summary) return "";
+
+  const sections: string[] = [];
+  const provider = ctx.cloudProvider;
+  if (provider === "aws" || provider === "azure" || provider === "gcp") {
+    const name = PROVIDER_NAMES[provider];
+    sections.push(
+      `## Cloud Services: a table with the columns Component | Managed service | Why it was chosen, one row per component that runs on a managed ${name} service. Use the node's managed service where the canvas lists one; otherwise propose a managed ${name} service and mark it "(proposed)".`
+    );
+  }
+  const frameworks = COMPLIANCE_FRAMEWORKS[ctx.industry ?? ""];
+  if (frameworks) {
+    sections.push(
+      `## Compliance and Data Protection: the frameworks that apply (${frameworks}), which components are in scope (use the boundaries where the canvas has them), and the controls the design requires: encryption in transit and at rest, audit logging, access control, and data retention. List required controls only: don't state or imply that the system is certified or compliant, and don't name certifications the design doesn't support.`
+    );
+  }
+  const projectSection = PROJECT_TYPE_SECTIONS[ctx.projectType ?? ""];
+  if (projectSection) sections.push(projectSection);
+
+  return [
+    `Design context: ${summary}`,
+    "Adjust the structure for this context:",
+    `- Directly under the title, add this line: **Context:** ${summary}`,
+    ...(sections.length
+      ? [
+          "- Add these sections after Non-Functional Requirements and before Assumptions and Open Questions, in this order:",
+          ...sections.map((section) => `  ${section}`),
+        ]
+      : []),
+  ].join("\n");
 }
