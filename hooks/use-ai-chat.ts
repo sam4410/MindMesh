@@ -13,12 +13,37 @@ export interface ChatEntry extends ChatMessage {
 // "assistant" posts as MindMesh: the browser that started a design run reports its outcome.
 export type SendChatMessage = (content: string, role?: ChatMessage["role"]) => Promise<void>;
 
+// A prompt for the AI sidebar's input, with the selected nodes it's about (spec 48).
+export interface AiPromptDraft {
+  text: string;
+  focusNodeIds: string[];
+}
+
 // The AI sidebar lives in EditorShell, outside the Liveblocks room, so the canvas hands it the
-// room's chat and a send function (same pattern as CanvasSaveContext).
+// room's chat and a send function (same pattern as CanvasSaveContext). In the other direction,
+// the canvas's node toolbar starts design runs and opens the sidebar through the last two.
 export const AiChatContext = createContext<{
   setMessages: (messages: ChatEntry[]) => void;
   sendRef: RefObject<SendChatMessage | null>;
-}>({ setMessages: () => {}, sendRef: { current: null } });
+  // The same flow as the sidebar's Send: post to chat, start a design run, follow it.
+  sendDesignPrompt: (prompt: string, focusNodeIds?: string[]) => Promise<void>;
+  // Opens the AI sidebar with this draft in its input, without sending it.
+  openAiPrompt: (draft: AiPromptDraft) => void;
+  // This browser is sending a design prompt or following its run, or someone's run is active.
+  isDesignBusy: boolean;
+}>({
+  setMessages: () => {},
+  sendRef: { current: null },
+  sendDesignPrompt: async () => {},
+  openAiPrompt: () => {},
+  isDesignBusy: false,
+});
+
+// For components inside the room, such as the node toolbar.
+export function useAiPromptActions() {
+  const { sendDesignPrompt, openAiPrompt, isDesignBusy } = useContext(AiChatContext);
+  return { sendDesignPrompt, openAiPrompt, isDesignBusy };
+}
 
 function hasCode(err: unknown, code: string) {
   return typeof err === "object" && err !== null && (err as { code?: unknown }).code === code;

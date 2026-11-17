@@ -39,6 +39,7 @@ export function ShapePanel({ onCreateShape }: { onCreateShape: (shape: NodeShape
       position="bottom-center"
       role="toolbar"
       aria-label="Shapes"
+      data-tour="shapes"
       className="flex items-center gap-1 rounded-full border border-surface-border bg-surface/90 p-1.5 backdrop-blur"
     >
       {NODE_SHAPES.map((shape) => {

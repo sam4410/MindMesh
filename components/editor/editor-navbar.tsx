@@ -2,6 +2,8 @@ import { UserButton } from "@clerk/nextjs";
 import {
   AlertCircle,
   Check,
+  Download,
+  FileImage,
   LayoutTemplate,
   Loader2,
   PanelLeftClose,
@@ -12,8 +14,15 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import type { CanvasSaveStatus } from "@/hooks/use-canvas-autosave";
 import { designContextLabels, type DesignContext } from "@/lib/design-context";
+import type { ImageFormat } from "@/lib/export-image";
 
 interface EditorNavbarProps {
   isSidebarOpen: boolean;
@@ -24,6 +33,10 @@ interface EditorNavbarProps {
   onToggleAiSidebar?: () => void;
   onShare?: () => void;
   onOpenTemplates?: () => void;
+  onExportImage?: (format: ImageFormat) => void;
+  // False on an empty (or still loading) canvas, which disables the image items.
+  canExportImage?: boolean;
+  exportError?: string | null;
   saveStatus?: CanvasSaveStatus;
   onSave?: () => void;
   designContext?: DesignContext;
@@ -53,6 +66,9 @@ export function EditorNavbar({
   onToggleAiSidebar,
   onShare,
   onOpenTemplates,
+  onExportImage,
+  canExportImage = false,
+  exportError,
   saveStatus = "idle",
   onSave,
   designContext,
@@ -113,10 +129,39 @@ export function EditorNavbar({
               {saveButton.icon}
               <span aria-live="polite">{saveButton.label}</span>
             </Button>
-            <Button variant="outline" className="rounded-xl" onClick={onOpenTemplates}>
+            <Button variant="outline" className="rounded-xl" onClick={onOpenTemplates} data-tour="templates">
               <LayoutTemplate className="h-4 w-4" />
               Templates
             </Button>
+            {/* Later specs add more export items to this menu. */}
+            <div className="relative">
+              <DropdownMenu>
+                <DropdownMenuTrigger render={<Button variant="outline" className="rounded-xl" />}>
+                  <Download className="h-4 w-4" />
+                  Export
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-auto min-w-36">
+                  <DropdownMenuItem disabled={!canExportImage} onClick={() => onExportImage?.("png")}>
+                    <FileImage />
+                    PNG image
+                  </DropdownMenuItem>
+                  <DropdownMenuItem disabled={!canExportImage} onClick={() => onExportImage?.("svg")}>
+                    <FileImage />
+                    {/* Browser-only: html-to-image SVGs hold HTML in a foreignObject, which slide
+                        and design apps don't draw. A vector SVG export is in the tracker's backlog. */}
+                    SVG (web)
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              {exportError && (
+                <p
+                  role="alert"
+                  className="absolute top-full right-0 z-50 mt-2 rounded-md border border-surface-border bg-surface px-2 py-1 text-xs whitespace-nowrap text-error shadow-lg"
+                >
+                  {exportError}
+                </p>
+              )}
+            </div>
             <Button variant="outline" className="rounded-xl" onClick={onShare}>
               <Share2 className="h-4 w-4" />
               Share
@@ -128,6 +173,7 @@ export function EditorNavbar({
               aria-label={isAiSidebarOpen ? "Close AI sidebar" : "Open AI sidebar"}
               aria-expanded={isAiSidebarOpen}
               aria-controls="ai-sidebar"
+              data-tour="ai"
             >
               <Sparkles className="h-4 w-4" />
               AI

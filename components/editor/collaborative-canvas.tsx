@@ -43,6 +43,8 @@ import { CanvasControls } from "@/components/editor/canvas-controls";
 import { CanvasEdgeView } from "@/components/editor/canvas-edge";
 import { CanvasNodeView } from "@/components/editor/canvas-node";
 import { LiveCursors } from "@/components/editor/live-cursors";
+import { NodeAiToolbar } from "@/components/editor/node-ai-toolbar";
+import { OnboardingTour } from "@/components/editor/onboarding-tour";
 import { PresenceAvatars } from "@/components/editor/presence-avatars";
 import { ShapePanel } from "@/components/editor/shape-panel";
 import { Button } from "@/components/ui/button";
@@ -50,6 +52,7 @@ import type { CanvasTemplate } from "@/components/editor/starter-templates";
 import { useSyncAiChat } from "@/hooks/use-ai-chat";
 import { useSyncAiActivity } from "@/hooks/use-ai-status";
 import { useCanvasAutosave, type CanvasLoadState } from "@/hooks/use-canvas-autosave";
+import { useRegisterCanvasExport } from "@/hooks/use-canvas-export";
 import { useRegisterCanvasImport } from "@/hooks/use-canvas-import";
 import { ZOOM_ANIMATION, isEditableTarget, useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
 import type { CanvasSnapshot } from "@/lib/canvas-snapshot";
@@ -60,6 +63,7 @@ import {
   shapeDragPayload,
   type ShapeDragPayload,
 } from "@/lib/canvas-shapes";
+import { exportCanvasImage } from "@/lib/export-image";
 import {
   BOUNDARY_Z_INDEX,
   DEFAULT_NODE_COLOR,
@@ -144,11 +148,16 @@ function Canvas() {
   const [loadState, setLoadState] = useState<CanvasLoadState>(
     nodes.length > 0 || edges.length > 0 ? "ready" : "loading"
   );
+  // Set when someone drew (or imported a template) while the saved canvas was loading.
+  const [drewWhileLoading, setDrewWhileLoading] = useState(false);
+  // Bumped by "Show tour" in the user menu.
+  const [tourReplay, setTourReplay] = useState(0);
 
   // An effect event so this sees the room as it is when the fetch finishes: someone may have
   // started drawing in the meantime, and then the saved canvas must not land on top.
   const applySavedCanvas = useEffectEvent((saved: CanvasSnapshot | null) => {
-    if (saved && nodes.length === 0 && edges.length === 0) {
+    const roomIsEmpty = nodes.length === 0 && edges.length === 0;
+    if (saved && roomIsEmpty) {
       room.batch(() => {
         onNodesChange(saved.nodes.map((item) => ({ type: "add", item })));
         onEdgesChange(saved.edges.map((item) => ({ type: "add", item })));
@@ -158,6 +167,8 @@ function Canvas() {
       // A fit on an empty canvas stays queued and zooms in on the first dropped node.
       if (saved.nodes.length > 0) reactFlow.fitView({ ...ZOOM_ANIMATION, padding: 0.2 });
     }
+    // The room's drawing wins over the saved canvas, and the saved file doesn't have it yet.
+    if (!roomIsEmpty) setDrewWhileLoading(true);
     setLoadState("ready");
   });
 
@@ -196,6 +207,7 @@ function Canvas() {
     nodes,
     edges,
     loadState,
+    unsavedOnLoad: drewWhileLoading,
     onRetryLoad: () => setLoadState("loading"),
   });
 
@@ -213,6 +225,10 @@ function Canvas() {
     reactFlow.fitView({ ...ZOOM_ANIMATION, padding: 0.2 });
   }
   useRegisterCanvasImport(importTemplate);
+  // The navbar's Export menu (spec 50) renders the whole diagram from React Flow's current nodes.
+  useRegisterCanvasExport((format, fileBaseName) =>
+    exportCanvasImage(format, reactFlow.getNodes(), fileBaseName)
+  );
 
   function addShape(payload: ShapeDragPayload, point: { x: number; y: number }) {
     const { shape, width, height } = payload;
@@ -276,7 +292,8 @@ function Canvas() {
   }
 
   return (
-    // tabIndex: clicking the empty canvas focuses nothing otherwise, and keys would miss this div.
+    <>
+    {/* tabIndex: clicking the empty canvas focuses nothing otherwise, and keys would miss this div. */}
     <div
       ref={canvasRef}
       tabIndex={-1}
@@ -316,11 +333,17 @@ function Canvas() {
           bgColor="var(--bg-base)"
         />
         <LiveCursors />
-        <PresenceAvatars />
+        <PresenceAvatars onShowTour={() => setTourReplay((count) => count + 1)} />
         <CanvasControls onUndo={undo} onRedo={redo} />
         <ShapePanel onCreateShape={handleCreateShape} />
+        {/* Disabled while any design run is active in the room. */}
+        <NodeAiToolbar nodes={flowNodes.filter((node) => node.selected)} disabled={isAiActive} />
       </ReactFlow>
     </div>
+    {/* Outside the canvas div, so its keys don't reach the canvas's handlers. Waits for the
+        canvas to load, so it doesn't open over the loading state. */}
+    {loadState === "ready" && <OnboardingTour replay={tourReplay} returnFocusRef={canvasRef} />}
+    </>
   );
 }
 
