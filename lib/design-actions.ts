@@ -12,8 +12,8 @@ import {
   type NodeShape,
 } from "@/types/canvas";
 
-// A left-to-right flow, one node per cell. Columns are 280px apart (wider than the starter
-// templates' 240px) so edge labels between neighbouring columns have room for one line.
+// A left-to-right flow, one node per cell, shared with the starter templates. Columns are 280px
+// apart so edge labels between neighbouring columns have room for one line.
 export const GRID = { column: 280, row: 160 } as const;
 // Largest size the agent may give a node, so it still fits its cell.
 export const MAX_NODE_SIZE = { width: 200, height: 140 } as const;
@@ -177,8 +177,8 @@ function isBoundary(node: CanvasNode) {
 }
 
 // Padding around the enclosed nodes, plus room above them for the boundary's label.
-const BOUNDARY_PADDING = 40;
-const BOUNDARY_LABEL_SPACE = 28;
+export const BOUNDARY_PADDING = 40;
+export const BOUNDARY_LABEL_SPACE = 28;
 
 // The box that encloses the given (existing, non-boundary) nodes with padding, or null if none exist.
 function boundaryBox(flow: FlowLike, memberIds: readonly string[], resolve: (ref: string) => string): Box | null {

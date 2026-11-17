@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { designContextSchema } from "@/lib/design-context";
 import { NODE_SHAPES } from "@/types/canvas";
 
 // One Liveblocks feed per room for background task activity: design now, spec generation later.
@@ -71,7 +72,11 @@ export const specRequestSchema = z.object({
   edges: z.array(specEdgeSchema).max(SPEC_MAX_EDGES),
 });
 
-// projectId is set by the route from the project the user can access, never taken from the client.
-export const generateSpecPayloadSchema = specRequestSchema.extend({ projectId: z.string().min(1) });
+// projectId and designContext are set by the route from the project the user can access, never
+// taken from the client.
+export const generateSpecPayloadSchema = specRequestSchema.extend({
+  projectId: z.string().min(1),
+  designContext: designContextSchema,
+});
 
 export type GenerateSpecPayload = z.infer<typeof generateSpecPayloadSchema>;

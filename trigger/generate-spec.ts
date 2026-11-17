@@ -6,7 +6,9 @@ import { del, put } from "@vercel/blob";
 import { generateText } from "ai";
 
 import { boundaryMembers } from "@/lib/boundaries";
-import { CLOUD_PROVIDER_BADGES, getCloudService } from "@/lib/cloud-services";
+import { getCloudService, serviceFullName } from "@/lib/cloud-services";
+import { EMPTY_DESIGN_CONTEXT } from "@/lib/design-context";
+import { buildSpecContextSections } from "@/lib/design-context-prompts";
 import { prisma } from "@/lib/prisma";
 import { specBlobPath } from "@/lib/project-spec";
 import { generateSpecPayloadSchema, type GenerateSpecPayload, type TaskStatus } from "@/types/tasks";
@@ -27,6 +29,8 @@ Use this structure:
 ## Data Storage: each data store, what it holds, and who reads or writes it.
 ## Non-Functional Requirements: scalability, availability, security and observability as they apply to this design.
 ## Assumptions and Open Questions: what you inferred that the canvas and chat don't state, and decisions still to make.
+
+When the request gives a design context, also add the line and sections it asks for, where it says; keep the sections above in the same order.
 
 Rules:
 - The canvas is the source of truth. Cover every node and edge, and don't add components that aren't on it. Ideas from the chat that aren't on the canvas go under open questions.
@@ -95,7 +99,7 @@ async function saveSpec(projectId: string, spec: string) {
   return specId;
 }
 
-function describeContext({ nodes, edges, chatHistory }: GenerateSpecPayload) {
+function describeContext({ nodes, edges, chatHistory, designContext }: GenerateSpecPayload) {
   const names = new Map(
     nodes.map((node) => [node.id, node.data.label.trim() || `unlabeled ${node.data.shape}`])
   );
@@ -107,7 +111,7 @@ function describeContext({ nodes, edges, chatHistory }: GenerateSpecPayload) {
 
   const nodeLines = components.map((node) => {
     const service = getCloudService(node.data.service);
-    const managed = service ? `, managed service: ${CLOUD_PROVIDER_BADGES[service.provider].label} ${service.name}` : "";
+    const managed = service ? `, managed service: ${serviceFullName(service)}` : "";
     return `- ${nameOf(node.id)} (${node.data.shape}${managed})`;
   });
   const boundaryLines = boundaries.map((boundary) => {
@@ -121,6 +125,8 @@ function describeContext({ nodes, edges, chatHistory }: GenerateSpecPayload) {
   const chatLines = chatHistory.map(
     (message) => `${message.sender.name} (${message.role}): ${message.content}`
   );
+  // Fields the payload omits count as not set; "" when no context is set.
+  const contextSections = buildSpecContextSections({ ...EMPTY_DESIGN_CONTEXT, ...designContext });
 
   return [
     `Canvas nodes (${components.length}):`,
@@ -138,6 +144,7 @@ function describeContext({ nodes, edges, chatHistory }: GenerateSpecPayload) {
     "",
     "Team chat, oldest first:",
     ...(chatLines.length ? chatLines : ["(none)"]),
+    ...(contextSections ? ["", contextSections] : []),
   ].join("\n");
 }
 

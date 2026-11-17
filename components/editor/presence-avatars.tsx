@@ -3,6 +3,7 @@
 import { UserButton, useAuth } from "@clerk/nextjs";
 import { shallow, useOthersMapped } from "@liveblocks/react";
 import { Panel } from "@xyflow/react";
+import { Compass } from "lucide-react";
 
 const MAX_AVATARS = 5;
 // Collaborator avatars and the Clerk UserButton share this size so the group lines up.
@@ -22,7 +23,8 @@ function initials(name: string) {
 }
 
 // Rendered inside <ReactFlow>, so it only exists in the room view; the shared navbar is untouched.
-export function PresenceAvatars() {
+// onShowTour restarts the onboarding tour (spec 49) from the user menu.
+export function PresenceAvatars({ onShowTour }: { onShowTour: () => void }) {
   const { userId } = useAuth();
   const others = useOthersMapped(
     (other) => ({ id: other.id, thinking: other.presence.thinking, ...other.info }),
@@ -68,7 +70,11 @@ export function PresenceAvatars() {
           <div aria-hidden className="h-5 w-px bg-surface-border" />
         </>
       )}
-      <UserButton appearance={{ elements: { avatarBox: AVATAR_SIZE } }} />
+      <UserButton appearance={{ elements: { avatarBox: AVATAR_SIZE } }}>
+        <UserButton.MenuItems>
+          <UserButton.Action label="Show tour" labelIcon={<Compass className="h-4 w-4" />} onClick={onShowTour} />
+        </UserButton.MenuItems>
+      </UserButton>
     </Panel>
   );
 }

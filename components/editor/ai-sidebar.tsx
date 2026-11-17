@@ -1,30 +1,27 @@
 "use client";
 
 import { useAuth } from "@clerk/nextjs";
-import { useRealtimeRun } from "@trigger.dev/react-hooks";
 import { Bot, Loader2, SendHorizontal, X } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 
-import { RunPoller } from "@/components/editor/run-poller";
 import { SpecsTab } from "@/components/editor/specs-tab";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import type { ChatEntry } from "@/hooks/use-ai-chat";
+import type { AiPromptDraft, ChatEntry } from "@/hooks/use-ai-chat";
 import type { AiActivity } from "@/hooks/use-ai-status";
-import { designRunMessage, type FinishedRun } from "@/lib/ai-status";
+import type { DesignRun } from "@/hooks/use-design-run";
 import type { CanvasSnapshot } from "@/lib/canvas-snapshot";
-import { postJson } from "@/lib/post-json";
+import type { DesignContext } from "@/lib/design-context";
+import { getPromptSuggestions } from "@/lib/prompt-suggestions";
 import { cn } from "@/lib/utils";
-import type { designAgent } from "@/trigger/design-agent";
-import { CHAT_MESSAGE_MAX_LENGTH, type ChatMessage, type TaskStatusMessage } from "@/types/tasks";
+import { CHAT_MESSAGE_MAX_LENGTH, type TaskStatusMessage } from "@/types/tasks";
 
-const STARTER_PROMPTS = [
-  "Design an e-commerce backend",
-  "Create a chat app architecture",
-  "Build a CI/CD pipeline",
-];
+// Refinement chips shown above the input once the canvas has nodes.
+const MAX_REFINEMENT_CHIPS = 3;
+const CHIP_CLASS =
+  "rounded-full bg-subtle px-3 py-1.5 text-xs text-ai-text transition-colors hover:bg-elevated focus-visible:ring-2 focus-visible:ring-ai/60 focus-visible:outline-none";
 
 // The spec's "accent" is the AI accent (indigo) here; the project's own `accent` utility is a
 // shadcn surface color. Inactive tabs already use the muted text token; `!` beats tabs.tsx's
@@ -57,14 +54,6 @@ function linkify(text: string) {
   );
 }
 
-type SendMessage = (content: string, role?: ChatMessage["role"]) => Promise<void>;
-
-// The run this browser started, and the token that lets it read only that run.
-interface ActiveRun {
-  runId: string;
-  publicToken: string;
-}
-
 interface AiSidebarProps {
   isOpen: boolean;
   onClose: () => void;
@@ -74,9 +63,15 @@ interface AiSidebarProps {
   chatMessages: ChatEntry[];
   // The project ID, which is also the Liveblocks room ID.
   projectId: string;
-  onSendMessage: SendMessage;
+  // The shared design send flow (hooks/use-design-run.ts), also used by the canvas's node toolbar.
+  designRun: DesignRun;
+  // From the node toolbar's "Ask AI…": put in the input, with the nodes it's about.
+  promptDraft: AiPromptDraft | null;
   // The live canvas, or null until it has loaded; spec generation sends it.
   getCanvas: () => CanvasSnapshot | null;
+  // The project's design context and whether the canvas has nodes; together they pick the prompt suggestions.
+  designContext: DesignContext;
+  hasNodes: boolean;
 }
 
 export function AiSidebar({
@@ -85,10 +80,19 @@ export function AiSidebar({
   activity,
   chatMessages,
   projectId,
-  onSendMessage,
+  designRun,
+  promptDraft,
   getCanvas,
+  designContext,
+  hasNodes,
 }: AiSidebarProps) {
   const [tab, setTab] = useState("architect");
+  // A new draft from the node toolbar brings the architect tab forward (adjusted during render).
+  const [seenDraft, setSeenDraft] = useState(promptDraft);
+  if (promptDraft !== seenDraft) {
+    setSeenDraft(promptDraft);
+    if (promptDraft) setTab("architect");
+  }
   return (
     <aside
       id="ai-sidebar"
@@ -126,10 +130,12 @@ export function AiSidebar({
         {/* keepMounted so a half-typed prompt survives switching tabs. */}
         <TabsContent value="architect" keepMounted className="flex min-h-0 flex-col">
           <ArchitectTab
-            projectId={projectId}
             messages={chatMessages}
-            onSend={onSendMessage}
+            designRun={designRun}
+            promptDraft={promptDraft}
             activity={activity}
+            designContext={designContext}
+            hasNodes={hasNodes}
           />
         </TabsContent>
         {/* keepMounted so a running generation keeps its subscription; the list reloads on each visit. */}
@@ -169,21 +175,41 @@ function StatusStrip({ latest }: { latest: TaskStatusMessage | null }) {
 }
 
 interface ArchitectTabProps {
-  projectId: string;
   messages: ChatEntry[];
-  onSend: SendMessage;
+  designRun: DesignRun;
+  promptDraft: AiPromptDraft | null;
   activity: AiActivity;
+  designContext: DesignContext;
+  hasNodes: boolean;
 }
 
-function ArchitectTab({ projectId, messages, onSend, activity }: ArchitectTabProps) {
+function ArchitectTab({ messages, designRun, promptDraft, activity, designContext, hasNodes }: ArchitectTabProps) {
   const { userId } = useAuth();
   const [draft, setDraft] = useState("");
-  const [isSending, setIsSending] = useState(false);
-  const [sendError, setSendError] = useState<string | null>(null);
-  const [activeRun, setActiveRun] = useState<ActiveRun | null>(null);
+  // The selected nodes a draft from the node toolbar is about; sent with that message (spec 48).
+  const [focusNodeIds, setFocusNodeIds] = useState<string[] | null>(null);
   // Research best practices before designing (spec 70); off by default, remembered per browser.
   const [research, setResearch] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const { sendDesignPrompt, sendError, isBusy } = designRun;
+  // This browser's run, or one started by someone else in the room (seen through AI presence).
+  const isRunActive = designRun.activeRun !== null || activity.active;
+
+  // A new draft from the node toolbar replaces the input (adjusted during render; focused below).
+  const [seenDraft, setSeenDraft] = useState(promptDraft);
+  if (promptDraft !== seenDraft) {
+    setSeenDraft(promptDraft);
+    if (promptDraft) {
+      setDraft(promptDraft.text);
+      setFocusNodeIds(promptDraft.focusNodeIds);
+    }
+  }
+  useEffect(() => {
+    const input = inputRef.current;
+    if (!promptDraft || !input) return;
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+  }, [promptDraft]);
 
   // Read after mount: the sidebar also renders on the server, where localStorage doesn't exist.
   useEffect(() => {
@@ -205,36 +231,6 @@ function ArchitectTab({ projectId, messages, onSend, activity }: ArchitectTabPro
     }
   }
   const endRef = useRef<HTMLLIElement>(null);
-  // Read when the run ends, so the final message can reuse the agent's own summary.
-  const latestStatus = useRef(activity.latest);
-  // onComplete can fire again when the subscription stops; one final message per run.
-  const finishedRunId = useRef<string | null>(null);
-  // This browser's run, or one started by someone else in the room (seen through AI presence).
-  const isRunActive = activeRun !== null || activity.active;
-  const isBusy = isSending || isRunActive;
-
-  useEffect(() => {
-    latestStatus.current = activity.latest;
-  }, [activity.latest]);
-
-  // Called by the realtime subscription and by the polling fallback; the first to see the run
-  // finish posts the final message, once.
-  const finishRun = (run: (FinishedRun & { id: string }) | undefined, err?: Error) => {
-    const message = designRunMessage(run, err, latestStatus.current);
-    if (!message) return;
-    if (run && finishedRunId.current === run.id) return;
-    if (run) finishedRunId.current = run.id;
-    // Everyone in the room sees the outcome in ai-chat; the canvas already updated through Liveblocks.
-    void onSend(message, "assistant").catch((sendErr: unknown) => console.error(sendErr));
-    setActiveRun(null);
-  };
-
-  useRealtimeRun<typeof designAgent>(activeRun?.runId, {
-    accessToken: activeRun?.publicToken,
-    enabled: activeRun !== null,
-    skipColumns: ["payload"],
-    onComplete: (run, err) => finishRun(run, err),
-  });
 
   useEffect(() => {
     // Scroll only the chat viewport; scrollIntoView would also shift the overflow-hidden aside.
@@ -242,52 +238,23 @@ function ArchitectTab({ projectId, messages, onSend, activity }: ArchitectTabPro
     if (viewport) viewport.scrollTop = viewport.scrollHeight;
   }, [messages]);
 
-  // Posts the prompt to ai-chat, then starts a design run and follows it in real time.
+  // Posts the prompt to ai-chat, then starts a design run and follows it (hooks/use-design-run.ts).
   async function send(event?: FormEvent) {
     event?.preventDefault();
-    const prompt = draft.trim();
-    if (!prompt || isBusy) return;
-    setIsSending(true);
-    setSendError(null);
-    try {
-      await onSend(prompt);
-    } catch (err) {
-      // The chat itself is unreachable, so this error can't go into it.
-      console.error(err);
-      setSendError("Couldn't send your message. Try again.");
-      setIsSending(false);
-      return;
-    }
-    setDraft("");
+    await sendDesignPrompt(draft, {
+      focusNodeIds: focusNodeIds ?? undefined,
+      research,
+      onPosted: () => {
+        setDraft("");
+        setFocusNodeIds(null);
+      },
+    });
+  }
 
-    let runId: string;
-    try {
-      // POST /api/ai/design also needs projectId; here the room ID is the project ID.
-      ({ runId } = await postJson<{ runId: string }>("/api/ai/design", {
-        prompt,
-        roomId: projectId,
-        projectId,
-        research,
-      }));
-    } catch (err) {
-      console.error(err);
-      await onSend("Couldn't start the design. Try again.", "assistant").catch(console.error);
-      setIsSending(false);
-      return;
-    }
-    try {
-      // The design route returns only the run ID; its token route issues the run-scoped token.
-      const { token } = await postJson<{ token: string }>("/api/ai/design/token", { runId });
-      setActiveRun({ runId, publicToken: token });
-    } catch (err) {
-      console.error(err);
-      await onSend(
-        "The design started, but its progress can't be tracked here. Changes will still appear on the canvas.",
-        "assistant"
-      ).catch(console.error);
-    } finally {
-      setIsSending(false);
-    }
+  function updateDraft(value: string) {
+    setDraft(value);
+    // Clearing the input drops the node focus too, so a fresh prompt isn't tied to old nodes.
+    if (!value.trim()) setFocusNodeIds(null);
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
@@ -297,20 +264,15 @@ function ArchitectTab({ projectId, messages, onSend, activity }: ArchitectTabPro
     void send();
   }
 
-  function pickStarter(prompt: string) {
+  // Fills the input and focuses it; the user still sends it.
+  function pickSuggestion(prompt: string) {
     setDraft(prompt);
+    setFocusNodeIds(null);
     inputRef.current?.focus();
   }
 
   return (
     <>
-      {activeRun && (
-        <RunPoller<typeof designAgent>
-          runId={activeRun.runId}
-          accessToken={activeRun.publicToken}
-          onComplete={finishRun}
-        />
-      )}
       <ScrollArea className="min-h-0 flex-1">
         {messages.length === 0 ? (
           <div className="flex flex-col items-center gap-4 px-6 py-10 text-center">
@@ -323,18 +285,16 @@ function ArchitectTab({ projectId, messages, onSend, activity }: ArchitectTabPro
                 Describe a system and the architect will help you sketch it on the canvas.
               </p>
             </div>
-            <div className="flex flex-wrap justify-center gap-2">
-              {STARTER_PROMPTS.map((prompt) => (
-                <button
-                  key={prompt}
-                  type="button"
-                  onClick={() => pickStarter(prompt)}
-                  className="rounded-full bg-subtle px-3 py-1.5 text-xs text-ai-text transition-colors hover:bg-elevated focus-visible:ring-2 focus-visible:ring-ai/60 focus-visible:outline-none"
-                >
-                  {prompt}
-                </button>
-              ))}
-            </div>
+            {/* Once the canvas has nodes, the refinement chips above the input replace these. */}
+            {!hasNodes && (
+              <div className="flex flex-wrap justify-center gap-2">
+                {getPromptSuggestions(designContext, false).map((prompt) => (
+                  <button key={prompt} type="button" onClick={() => pickSuggestion(prompt)} className={CHIP_CLASS}>
+                    {prompt}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         ) : (
           <ul className="flex flex-col gap-3 p-4">
@@ -371,6 +331,17 @@ function ArchitectTab({ projectId, messages, onSend, activity }: ArchitectTabPro
       </ScrollArea>
 
       {isRunActive && <StatusStrip latest={activity.latest} />}
+      {hasNodes && !isBusy && (
+        <div role="group" aria-label="Suggested prompts" className="flex flex-wrap gap-1.5 px-3 pt-2">
+          {getPromptSuggestions(designContext, true)
+            .slice(0, MAX_REFINEMENT_CHIPS)
+            .map((prompt) => (
+              <button key={prompt} type="button" onClick={() => pickSuggestion(prompt)} className={CHIP_CLASS}>
+                {prompt}
+              </button>
+            ))}
+        </div>
+      )}
       {sendError && (
         <p role="alert" className="border-t border-surface-border px-3 pt-2 text-xs text-error">
           {sendError}
@@ -383,7 +354,7 @@ function ArchitectTab({ projectId, messages, onSend, activity }: ArchitectTabPro
         <Textarea
           ref={inputRef}
           value={draft}
-          onChange={(event) => setDraft(event.target.value)}
+          onChange={(event) => updateDraft(event.target.value)}
           onKeyDown={handleKeyDown}
           disabled={isRunActive}
           maxLength={CHAT_MESSAGE_MAX_LENGTH}

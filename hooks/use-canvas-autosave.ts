@@ -22,18 +22,22 @@ export type CanvasLoadState = "loading" | "ready" | "failed";
 
 // The Save button lives in the navbar (EditorShell) while the canvas sits deep inside the page.
 // canvasRef hands the live canvas to EditorShell too (the AI sidebar's spec generation reads it);
-// it's null until the canvas has loaded.
+// it's null until the canvas has loaded. setHasNodes tells EditorShell when the loaded canvas gains
+// its first node or loses its last, so the AI sidebar re-renders its prompt suggestions.
 export const CanvasSaveContext = createContext<{
   setStatus: (status: CanvasSaveStatus) => void;
   saveRef: RefObject<(() => void) | null>;
   canvasRef: RefObject<CanvasSnapshot | null>;
-}>({ setStatus: () => {}, saveRef: { current: null }, canvasRef: { current: null } });
+  setHasNodes: (hasNodes: boolean) => void;
+}>({ setStatus: () => {}, saveRef: { current: null }, canvasRef: { current: null }, setHasNodes: () => {} });
 
 interface UseCanvasAutosaveOptions {
   projectId: string;
   nodes: CanvasNode[];
   edges: CanvasEdge[];
   loadState: CanvasLoadState;
+  // True when the canvas changed while it was loading, so the state it finished with isn't saved yet.
+  unsavedOnLoad?: boolean;
   onRetryLoad: () => void;
 }
 
@@ -43,9 +47,10 @@ export function useCanvasAutosave({
   nodes,
   edges,
   loadState,
+  unsavedOnLoad = false,
   onRetryLoad,
 }: UseCanvasAutosaveOptions) {
-  const { setStatus, saveRef, canvasRef } = useContext(CanvasSaveContext);
+  const { setStatus, saveRef, canvasRef, setHasNodes } = useContext(CanvasSaveContext);
   const url = `/api/projects/${projectId}/canvas`;
   const serialized = useMemo(() => serializeCanvas(nodes, edges), [nodes, edges]);
   const latest = useRef(serialized);
@@ -95,10 +100,15 @@ export function useCanvasAutosave({
   useEffect(() => {
     latest.current = serialized;
     if (loadState !== "ready") return;
-    // The first state after loading is what's already saved or live in the room, so it isn't an edit.
+    // The first state after loading is what's already saved or live in the room, so it isn't an
+    // edit, unless someone changed the canvas while it loaded: then it gets saved like any edit.
     if (lastSaved.current === null) {
-      lastSaved.current = serialized;
-      return;
+      if (!unsavedOnLoad) {
+        lastSaved.current = serialized;
+        return;
+      }
+      // Matches no canvas, so the save below goes ahead.
+      lastSaved.current = "";
     }
     if (serialized === lastSaved.current && !isSaving.current) {
       setStatus("saved");
@@ -108,12 +118,19 @@ export function useCanvasAutosave({
     // Each change clears the previous timer, so saves wait for a pause in editing.
     const timer = setTimeout(save, SAVE_DEBOUNCE_MS);
     return () => clearTimeout(timer);
-  }, [serialized, loadState, save, setStatus]);
+  }, [serialized, loadState, unsavedOnLoad, save, setStatus]);
 
   useEffect(() => {
     if (loadState === "failed") setStatus("error");
     else if (loadState === "loading") setStatus("idle");
   }, [loadState, setStatus]);
+
+  // Not tied to the save status: edits made while the canvas loads don't change it.
+  const hasNodes = loadState === "ready" && nodes.length > 0;
+  useEffect(() => {
+    setHasNodes(hasNodes);
+  }, [hasNodes, setHasNodes]);
+  useEffect(() => () => setHasNodes(false), [setHasNodes]);
 
   // The navbar's Save button saves right away, or retries a failed load first.
   useEffect(() => {

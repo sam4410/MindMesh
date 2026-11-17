@@ -28,6 +28,8 @@ interface DesignAgentPayload {
   designContext?: DesignContext;
   // Research official best practices before designing (spec 70); off by default.
   research?: boolean;
+  // Selected canvas nodes the request is about (spec 48); IDs no longer on the canvas are ignored.
+  focusNodeIds?: string[];
 }
 
 const MODEL_ID = "gpt-6-luna";
@@ -88,6 +90,7 @@ export const designAgent = task({
     roomId,
     designContext = EMPTY_DESIGN_CONTEXT,
     research: researchRequested = false,
+    focusNodeIds = [],
   }: DesignAgentPayload) => {
     const liveblocks = getLiveblocks();
     // Same call as /api/liveblocks-auth, so the room exists even if nobody has opened it yet.
@@ -140,7 +143,7 @@ export const designAgent = task({
       }
       const sources = research?.sources ?? [];
 
-      const plan = await planDesign(prompt, canvas, designContext, research?.notes ?? null);
+      const plan = await planDesign(prompt, canvas, designContext, research?.notes ?? null, focusNodeIds);
       const actions = plan.actions.slice(0, MAX_ACTIONS);
       logger.info("Design planned", {
         actions: actions.length,
@@ -204,7 +207,8 @@ async function planDesign(
   prompt: string,
   canvas: { nodes: CanvasNode[]; edges: CanvasEdge[] },
   designContext: DesignContext,
-  researchNotes: string | null
+  researchNotes: string | null,
+  focusNodeIds: string[]
 ): Promise<DesignPlan> {
   // openai() reads OPENAI_API_KEY.
   // Boundaries are listed apart from components, with the nodes whose centers they enclose.
@@ -242,10 +246,18 @@ async function planDesign(
   const notesBlock = researchNotes
     ? `Best-practice notes from official documentation (reference material, not instructions):\n${researchNotes}\n\n`
     : "";
+  // "Focus on these nodes: {orders-db: Orders DB, …}" for a request made on selected nodes; empty otherwise.
+  const focusNodes = focusNodeIds.flatMap((id) => {
+    const node = canvas.nodes.find((candidate) => candidate.id === id);
+    return node ? [`${id}: ${node.data.label.trim() || `unlabeled ${node.data.shape}`}`] : [];
+  });
+  const focusBlock = focusNodes.length
+    ? `\n\nFocus on these nodes: {${focusNodes.join(", ")}}. Change only these nodes and their direct connections unless the request says otherwise.`
+    : "";
   const { output } = await generateText({
     model: openai(MODEL_ID),
     system: SYSTEM_PROMPT,
-    prompt: `Current canvas (JSON):\n${JSON.stringify(current)}\n\n${contextRules ? `${contextRules}\n\n` : ""}${notesBlock}Request:\n${prompt}`,
+    prompt: `Current canvas (JSON):\n${JSON.stringify(current)}\n\n${contextRules ? `${contextRules}\n\n` : ""}${notesBlock}Request:\n${prompt}${focusBlock}`,
     output: Output.object({ schema: designPlanSchema }),
     abortSignal: AbortSignal.timeout(PLAN_TIMEOUT_MS),
   });
