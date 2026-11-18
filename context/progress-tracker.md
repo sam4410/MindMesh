@@ -6,7 +6,7 @@ Update this file whenever the current phase, active feature, or implementation s
 - Commercial roadmap, Phase 2 (Segmentation and ease of use). Features 40–43 and 68–71 complete; 34–39 deferred.
 
 ## Current Goal
-- Feature 51: Diagram Text Export
+- Feature 54: Node Comments
 
 ## Completed
 
@@ -652,12 +652,63 @@ Update this file whenever the current phase, active feature, or implementation s
     - TypeScript, ESLint and `npm run build` clean after the zoom fix. Test projects and the Clerk user deleted; dev server stopped.
   - At the user's request (2026-11-17), the SVG item is relabelled "SVG (web)" so it isn't mistaken for a slide format; a proper vector SVG export is in the Roadmap's Backlog. PNG stays the format for slides and documents.
 
+- Feature 51: Diagram Text Export (2026-11-17).
+  - `lib/exporters/mermaid.ts`: `toMermaid(nodes, edges)` → `flowchart LR` with the spec's shape brackets, `a -->|"label"| b` / `a --> b` edges, and `style id fill:…,color:…` lines (text color falls back to `DEFAULT_NODE_TEXT_COLOR`). IDs become `[A-Za-z0-9_]` (other characters → `_`), unique with `_2`, `_3`…; Mermaid keywords such as `end`, `style` and `click` get a trailing `_` because they'd be read as statements. Labels escape `&`, `<`, `>` and `"` as Mermaid entity codes (`#amp;`, `#lt;`, `#gt;`, `#quot;`) and turn newlines into `<br/>`. Edges with an end that isn't on the canvas are skipped.
+  - `lib/exporters/drawio.ts`: `toDrawio(nodes, edges)` → uncompressed `<mxfile><diagram><mxGraphModel>` with the spec's vertex styles, `fillColor`/`fontColor`, and geometry from position plus width/height (`SHAPE_SIZES` when a node has none); edges are `edge="1"` cells with `source`, `target` and the label as `value`, routed orthogonally. Cell IDs are `node-N`/`edge-N` because `0` and `1` are draw.io's root and layer. Labels use draw.io's HTML mode so they wrap, so text is HTML-escaped and then XML-escaped (newlines as `<br>`); every attribute is XML-escaped.
+  - Boundaries (not in the spec's tables): Mermaid `subgraph id["label"] … end` holding the components whose centers it encloses (`boundaryMembers`, as in spec generation), the smallest boundary when they overlap, styled with its colors and `stroke-dasharray:5 5`; draw.io a dashed rounded rectangle with its label top-left, emitted before the components so it sits behind them.
+  - Export menu: a separator, then "Mermaid (.mmd)", "draw.io (.drawio)" and "Copy Mermaid", disabled on an empty or loading canvas like the image items. Files are `${toSlug(projectName) || "canvas"}-diagram.mmd` / `.drawio`, saved through `lib/exporters/download.ts` (Blob + object URL). Copy uses `navigator.clipboard.writeText` and shows "Copied" (role="status", 2 s) under the Export button; a clipboard failure shows an error (5 s). EditorShell reads nodes and edges from the live canvas ref the autosave hook already fills, and the navbar's export props became `onExport(action)`, `canExport` and `exportNotice`.
+  - Self-check `lib/exporters/exporters.test.ts` (node:test): every shape in both formats, escaping of quotes, `<`, `&` and newlines, edge labels and unlabelled edges, dropped dangling edges, hyphenated, colliding and reserved IDs, boundaries. `node --import tsx --test lib/exporters/exporters.test.ts` → 6/6 pass.
+  - TypeScript, ESLint and `npm run build` clean.
+  - Browser-test fix: diagrams.net routed edges center to center, so "risk score" ran through Event Bus and "receipt event" through Audit Log Store, with their labels over those shapes' names. Edges now carry the canvas handles as fixed draw.io points (`top`/`right`/`bottom`/`left` → `exitX/exitY` and `entryX/entryY`, with zero offsets); edges without handles still let draw.io choose. Self-check extended for this (still 6/6); TypeScript, ESLint and `npm run build` clean after the fix.
+  - Browser test (local Playwright script, Payments template in a project named "Payments Platform"):
+    - All five Export items disabled on the empty canvas, enabled after the import.
+    - Downloads `payments-platform-diagram.mmd` (1,356 bytes) and `payments-platform-diagram.drawio`.
+    - "Copy Mermaid" → "Copied" under the Export button, gone after 2 s. The clipboard text equals the file apart from line endings: the Windows clipboard turns `
+` into `
+` (1,389 vs 1,356 characters), which Mermaid accepts.
+    - Mermaid 11.17.2 (the library the Live Editor runs) rendered it without errors: all 10 components with the right shapes (circle, pill, cylinder, hexagon, rectangle) and fills, all 9 edge labels, and "PCI zone" as a subgraph holding Payment Service and Tokenization Vault with its red fill and dashed outline. Mermaid lays the graph out itself, so positions don't carry over (expected for the format).
+    - diagrams.net viewer (`viewer.diagrams.net`, file passed compressed in the URL hash): no page errors; all 11 node labels and 9 edge labels; positions, sizes and colors match the canvas; the PCI zone outline sits behind its members; after the fix, edges leave and enter the same sides as on the canvas and no label covers a shape.
+    - No app console errors. Test project and Clerk user deleted; dev server stopped.
+  - Follow-up browser test in the real tools (2026-11-18), for the Payments template and a 50-node row with a 3-node boundary, the label `Orders "API" <v2> & co` and the edge label `a < b & "c"` (seeded through the canvas PUT and loaded from Blob):
+    - Mermaid Live Editor (mermaid.live, Mermaid v12.3.0, state passed as `#pako:`): both files render with no syntax error; Payments 10 nodes and the PCI zone group, the wide file all 50 nodes and Zone A; both tricky labels display literally.
+    - Full diagrams.net editor (app.diagrams.net, file passed compressed in `#R`): both open with no dialogs or page errors; Payments layout, colors, edge sides and labels match the canvas; the wide file shows all 100 labels (50 nodes, 49 edges, the zone) with the tricky label as typed.
+    - Large diagrams lay out as one long row in both tools; zoom-to-fit makes labels tiny but nothing is missing. Test projects and the Clerk user deleted; dev server stopped.
+
+- Feature 52: Architecture Review Task (2026-11-18).
+  - Billing deferred (as the spec's Billing Deferred section says): no usage check in the route, no `REVIEW` `TaskRunKind` value or `add_review_task_kind` migration, no `reviewRunsPerMonth` in `PLANS` (no `PLANS` exists yet). The `TaskRun` record is created exactly as the spec route does. "Usage limits apply to reviews" is not met until billing returns.
+  - `types/tasks.ts`: `reviewRequestSchema` (`roomId`, plus nodes and edges with the spec node/edge schemas and caps, at least one node), `reviewPayloadSchema` (request without `roomId`, plus `projectId` and `designContext`), `REVIEW_PILLARS`, `REVIEW_SEVERITIES`, and `reviewResultSchema`: `summary`; `pillars` of `{ pillar, score (integer 1–5), notes }`, exactly five with each pillar once (length in the JSON schema, uniqueness by a refine checked when the answer is parsed); `findings` of `{ severity, pillar, title, detail, recommendation, nodeIds }`, at most 20. Strict-schema rules followed: every field required, no string length rules (the JSON schema was printed and checked: `additionalProperties: false`, all fields required).
+  - `lib/design-context-prompts.ts`: `buildReviewContext(ctx)` names the framework for the cloud (AWS or Azure Well-Architected, Google Cloud Architecture Framework, self-hosted best practice for on-prem, generic best practice when agnostic or unset) mapped onto the five pillars, adds the project's context labels, and per industry lists the controls to check (finance PCI-DSS/SOC 2, healthcare HIPAA, e-commerce, SaaS, gaming, public sector) with a security finding for each missing one. The design and spec builders are unchanged.
+  - `trigger/review-architecture.ts` (new): `schemaTask` `review-architecture` on `reviewPayloadSchema`, `retry: { maxAttempts: 1 }` (a retry would bill the model call again), `generateText` with `Output.object({ schema: reviewResultSchema })` on `gpt-6-luna` (the design agent's model, duplicated with a comment so that task stays unchanged), 120 s timeout. The prompt lists nodes as `[id] name (shape, managed service)`, boundaries with their members, and labelled edges. Finding `nodeIds` not on the canvas are dropped (and de-duplicated) before returning; metadata `status` goes `processing` then `completed` or `failed`, like `generate-spec`. The review is the run output; nothing is persisted.
+  - `POST /api/ai/review` mirrors `POST /api/ai/spec`: auth, Zod validation (400 with the prettified error), `getAccessibleProject` from `roomId` (404), design context from the project, trigger, `TaskRun` record (the run is cancelled if the record fails), 202 `{ runId }`. `POST /api/ai/review/token` mirrors the spec token route: only the user with a `TaskRun` for that run gets a one-hour token scoped to read that run (404 otherwise).
+  - TypeScript, ESLint and `npm run build` clean (both routes listed). `trigger dev` registered `design-agent, generate-spec, review-architecture` (worker 20261118.1; worker stopped). Schema check: a valid review parses; a duplicate pillar and a score of 6 are rejected.
+  - Live test (2026-11-18; dev server, Trigger dev worker, two throwaway Clerk users A and B; AWS + Finance project with the Payments template, 11 nodes and 9 edges read back from the autosaved canvas):
+    - Validation: empty canvas → 400 "The canvas is empty"; unknown project → 404; body without nodes → 400; no session → 401; user B starting a review on A's project → 404.
+    - `POST /api/ai/review` → 202 `{ runId }`. Token route: A → 200 with a token (so the `TaskRun` record exists for A); no `runId` → 400; user B for A's run → 404 "Run not found".
+    - The run (read with A's run-scoped token through the Trigger API): COMPLETED in 1 attempt (26.8 s in the worker), metadata `status` "completed". Scores reliability 2, security 2, cost 3, performance 3, operations 2, each pillar exactly once. 7 findings (1 high, 6 medium) citing 26 node IDs, all on the canvas. Findings follow the context: the PCI boundary leaving out the API gateway (high), encryption and managed keys not shown, access and change audit logging, segregation of duties, no ledger backup or recovery.
+    - Test project (and with it the TaskRun, by cascade) and both Clerk users deleted; dev server and worker stopped.
+
+- Feature 53: Architecture Review UI (2026-11-19).
+  - Billing deferred (as the spec's Billing Deferred section says): no 402 `limit_reached` handling; a failed start shows the generic "Couldn't start the review. Try again." "The limit message appears when the plan limit is reached" is not met until billing returns.
+  - `components/editor/review-tab.tsx` (new), props `{ projectId, isActive, getCanvas }` (`isActive` kept for parity with the Specs tab; nothing reloads on a visit). "Review architecture" button with the Specs tab's guards ("The canvas is still loading…" / "Add something to the canvas first."), then `POST /api/ai/review` with the canvas nodes and edges and `POST /api/ai/review/token`; the run is followed with `useRealtimeRun` (`skipColumns: ["payload"]` only, since the output is the review) plus the existing `RunPoller` fallback, each run handled once. Spinner and "Reviewing…" while running; a failed run shows "Couldn't review the architecture. Try again."
+  - Result: summary paragraph; five pillar rows with the name, the score as 1–5 filled dots (`role="img"`, "Score N of 5") and the notes; findings grouped by severity, high first, with counts, each showing title, pillar, detail and recommendation. The latest result lives in component state only, with a muted note under it: "Reviews aren't saved: this one is gone when you reload the page." plus the time it was made.
+  - `hooks/use-canvas-focus.ts` (new): `CanvasFocusContext` (a ref EditorShell provides, same pattern as template import), `useRegisterCanvasFocus` used by `collaborative-canvas.tsx`, and `useCanvasFocus().focusNodes(ids)` for the Review tab. `focusNodes` selects exactly those nodes (local select changes through `onNodesChange`, so nothing syncs to collaborators) and calls `fitView({ nodes, padding: 0.4, duration: 300 })`; nodes deleted since the review are skipped, and when none are left it returns false and the tab says "Those nodes are no longer on the canvas." Findings with node IDs are buttons ("Show N nodes on canvas"); findings without nodes are plain cards.
+  - `ai-sidebar.tsx`: a third tab, "Review", after Specs, with `keepMounted` like Specs so a running review keeps its subscription and the result survives switching tabs.
+  - TypeScript, ESLint and `npm run build` clean.
+  - Browser test with one real review (2026-11-19; local Playwright script at 1440×900, AWS + Finance project with the Payments template, dev server and Trigger dev worker):
+    - Tabs AI Architect, Specs, Review; Review shows "No review yet". On the empty canvas the button shows "Add something to the canvas first." and sends no request.
+    - After the import: the button turns to "Reviewing…", disabled and `aria-busy`; switching to AI Architect and back mid-run keeps it running. Requests: `/api/ai/review` then `/api/ai/review/token` only.
+    - Result after 35 s (run 25.9 s in the worker): the summary; five pillar rows with matching filled dots (reliability 2, security 2, cost 3, performance 3, operations 2, each labelled "Score N of 5"); "Findings (7)" grouped "Medium (6)" then "Low (1)" (no high this time), each with title, pillar, detail and recommendation; 6 clickable findings and 1 plain card for a design-wide one; the note "Reviewed at 00:26. Reviews aren't saved: this one is gone when you reload the page." No console errors.
+    - Clicking "PCI boundary does not cover the payment ingress path" ("Show 5 nodes on canvas") selected exactly its 5 nodes and moved the viewport, but 3 of them (PCI zone, Tokenization Vault, Payment Service) landed behind the open AI sidebar, which floats over the canvas's right ~330 px.
+  - Fix after the test: `focusNodes` measures how much of the canvas the open AI sidebar (`#ai-sidebar`, skipped while it's `inert`) covers and pads the right side by that plus the margin 0.4 gives the left (`{ top: 0.4, bottom: 0.4, left: 0.4, right: "<px>" }`; plain 0.4 when nothing covers it). TypeScript, ESLint and `npm run build` clean. Shortcut noted in the code: the project sidebar, which can overlap on small screens, isn't accounted for.
+  - Re-test with a second real review (run 19.3 s; result 24 s after the click): 6 findings, now with "High (1)" shown first in red, then "Medium (4)", then the rest. Each of the 5 clickable findings selected exactly its nodes (5, 8, 2, 2 and 4) and every selected node landed fully inside the canvas and left of the open sidebar. No console errors.
+  - Test project and Clerk user deleted; dev server and worker stopped.
+
 ## In Progress
 
 - None.
 
 ## Next Up
-- Feature 51: Diagram Text Export (`context/feature-specs/51-diagram-text-export.md`)
+- Feature 54: Node Comments (`context/feature-specs/54-node-comments.md`)
 
 ## Roadmap
 
@@ -699,9 +750,9 @@ Billing and production hardening (specs 34–39) are deferred. The user decided 
 
 ### Phase 3: Exports and review
 - 50 Image export — Complete
-- 51 Diagram text export (Mermaid, draw.io) — Not started
-- 52 Architecture review task — Not started
-- 53 Architecture review UI — Not started
+- 51 Diagram text export (Mermaid, draw.io) — Complete
+- 52 Architecture review task — Complete (billing parts deferred)
+- 53 Architecture review UI — Complete (billing parts deferred)
 
 ### Phase 4: Team workflow and integrations
 - 54 Node comments — Not started

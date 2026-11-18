@@ -53,6 +53,7 @@ import { useSyncAiChat } from "@/hooks/use-ai-chat";
 import { useSyncAiActivity } from "@/hooks/use-ai-status";
 import { useCanvasAutosave, type CanvasLoadState } from "@/hooks/use-canvas-autosave";
 import { useRegisterCanvasExport } from "@/hooks/use-canvas-export";
+import { useRegisterCanvasFocus } from "@/hooks/use-canvas-focus";
 import { useRegisterCanvasImport } from "@/hooks/use-canvas-import";
 import { ZOOM_ANIMATION, isEditableTarget, useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
 import type { CanvasSnapshot } from "@/lib/canvas-snapshot";
@@ -229,6 +230,30 @@ function Canvas() {
   useRegisterCanvasExport((format, fileBaseName) =>
     exportCanvasImage(format, reactFlow.getNodes(), fileBaseName)
   );
+  // A review finding (spec 53) selects its nodes and zooms to them. Selection is local to this
+  // browser, like a click; nodes deleted since the review are skipped.
+  useRegisterCanvasFocus((ids) => {
+    const wanted = new Set(ids);
+    const targets = flowNodes.filter((node) => wanted.has(node.id));
+    if (targets.length === 0) return false;
+    onNodesChange(flowNodes.map((node) => ({ type: "select", id: node.id, selected: wanted.has(node.id) })));
+    // The open AI sidebar floats over the canvas's right edge, so that side also skips the part it
+    // covers; otherwise the zoom lands nodes behind the very panel the finding was clicked in.
+    // shortcut: only the AI sidebar is accounted for; the project sidebar can overlap on small screens.
+    const pane = canvasRef.current?.getBoundingClientRect();
+    const sidebar = document.getElementById("ai-sidebar");
+    const covered = pane && sidebar && !sidebar.inert ? Math.max(0, pane.right - sidebar.getBoundingClientRect().left) : 0;
+    const padding = 0.4;
+    reactFlow.fitView({
+      nodes: targets.map((node) => ({ id: node.id })),
+      duration: 300,
+      padding: covered && pane
+        ? // The right side gets the covered width plus what 0.4 gives the left (React Flow's formula).
+          { top: padding, bottom: padding, left: padding, right: `${Math.round(covered + (pane.width - pane.width / (1 + padding)) / 2)}px` }
+        : padding,
+    });
+    return true;
+  });
 
   function addShape(payload: ShapeDragPayload, point: { x: number; y: number }) {
     const { shape, width, height } = payload;

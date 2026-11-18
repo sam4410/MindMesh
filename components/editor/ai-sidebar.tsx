@@ -4,6 +4,7 @@ import { useAuth } from "@clerk/nextjs";
 import { Bot, Loader2, SendHorizontal, X } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 
+import { ReviewTab } from "@/components/editor/review-tab";
 import { SpecsTab } from "@/components/editor/specs-tab";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -126,6 +127,9 @@ export function AiSidebar({
           <TabsTrigger value="specs" className={TAB_TRIGGER}>
             Specs
           </TabsTrigger>
+          <TabsTrigger value="review" className={TAB_TRIGGER}>
+            Review
+          </TabsTrigger>
         </TabsList>
         {/* keepMounted so a half-typed prompt survives switching tabs. */}
         <TabsContent value="architect" keepMounted className="flex min-h-0 flex-col">
@@ -146,6 +150,10 @@ export function AiSidebar({
             chatMessages={chatMessages}
             getCanvas={getCanvas}
           />
+        </TabsContent>
+        {/* keepMounted like Specs, so a running review keeps its subscription and the result stays. */}
+        <TabsContent value="review" keepMounted className="flex min-h-0 flex-col">
+          <ReviewTab projectId={projectId} isActive={tab === "review"} getCanvas={getCanvas} />
         </TabsContent>
       </Tabs>
     </aside>

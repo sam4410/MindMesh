@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { AiSidebar } from "@/components/editor/ai-sidebar";
 import { DesignContextDialog } from "@/components/editor/design-context-dialog";
-import { EditorNavbar } from "@/components/editor/editor-navbar";
+import { EditorNavbar, type ExportAction, type ExportNotice } from "@/components/editor/editor-navbar";
 import { ProjectDialogs } from "@/components/editor/project-dialogs";
 import { ProjectSidebar } from "@/components/editor/project-sidebar";
 import { RunPoller } from "@/components/editor/run-poller";
@@ -15,11 +15,14 @@ import { AiChatContext, type AiPromptDraft, type ChatEntry, type SendChatMessage
 import { AiActivityContext, NO_AI_ACTIVITY, type AiActivity } from "@/hooks/use-ai-status";
 import { CanvasSaveContext, type CanvasSaveStatus } from "@/hooks/use-canvas-autosave";
 import { CanvasExportContext, type ExportCanvasImage } from "@/hooks/use-canvas-export";
+import { CanvasFocusContext, type FocusNodes } from "@/hooks/use-canvas-focus";
 import { CanvasImportContext, type ImportTemplate } from "@/hooks/use-canvas-import";
 import { useDesignRun, type DesignPromptOptions } from "@/hooks/use-design-run";
 import { ProjectActionsContext, useProjectActions } from "@/hooks/use-project-actions";
 import type { CanvasSnapshot } from "@/lib/canvas-snapshot";
-import type { ImageFormat } from "@/lib/export-image";
+import { downloadText } from "@/lib/exporters/download";
+import { toDrawio } from "@/lib/exporters/drawio";
+import { toMermaid } from "@/lib/exporters/mermaid";
 import { toSlug } from "@/lib/slug";
 import { EMPTY_DESIGN_CONTEXT, type DesignContext } from "@/lib/design-context";
 import { canManageProject } from "@/lib/project-roles";
@@ -49,8 +52,10 @@ export function EditorShell({ ownedProjects, sharedProjects, children }: EditorS
   const importTemplateRef = useRef<ImportTemplate | null>(null);
   // Filled by the canvas; see hooks/use-canvas-export.ts.
   const exportImageRef = useRef<ExportCanvasImage | null>(null);
-  // Shown briefly under the Export button when rendering an image fails.
-  const [exportError, setExportError] = useState<string | null>(null);
+  // Filled by the canvas; the Review tab focuses a finding's nodes through it (hooks/use-canvas-focus.ts).
+  const focusNodesRef = useRef<FocusNodes | null>(null);
+  // Shown briefly under the Export button: an export failure, or "Copied".
+  const [exportNotice, setExportNotice] = useState<ExportNotice | null>(null);
   const [saveStatus, setSaveStatus] = useState<CanvasSaveStatus>("idle");
   // Filled by the canvas; see hooks/use-canvas-autosave.ts.
   const saveCanvasRef = useRef<(() => void) | null>(null);
@@ -107,20 +112,46 @@ export function EditorShell({ ownedProjects, sharedProjects, children }: EditorS
   const aiChatValue = useMemo(() => ({ ...aiChat, isDesignBusy: designRun.isBusy }), [aiChat, designRun.isBusy]);
 
   useEffect(() => {
-    if (!exportError) return;
-    const timer = setTimeout(() => setExportError(null), 5000);
+    if (!exportNotice) return;
+    const timer = setTimeout(() => setExportNotice(null), exportNotice.tone === "error" ? 5000 : 2000);
     return () => clearTimeout(timer);
-  }, [exportError]);
+  }, [exportNotice]);
 
-  async function exportImage(format: ImageFormat) {
-    const exportCanvas = exportImageRef.current;
-    if (!exportCanvas || !currentProject) return;
-    setExportError(null);
+  async function handleExport(action: ExportAction) {
+    if (!currentProject) return;
+    const fileBaseName = `${toSlug(currentProject.name) || "canvas"}-diagram`;
+    setExportNotice(null);
+
+    if (action === "png" || action === "svg") {
+      const exportCanvas = exportImageRef.current;
+      if (!exportCanvas) return;
+      try {
+        await exportCanvas(action, fileBaseName);
+      } catch (err) {
+        console.error(err);
+        setExportNotice({ tone: "error", text: "Couldn't export the image. Try again." });
+      }
+      return;
+    }
+
+    // Mermaid and draw.io are built from the live canvas the autosave hook hands over (spec 51).
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    if (action === "drawio") {
+      downloadText(toDrawio(canvas.nodes, canvas.edges), `${fileBaseName}.drawio`, "application/vnd.jgraph.mxfile");
+      return;
+    }
+    const mermaid = toMermaid(canvas.nodes, canvas.edges);
+    if (action === "mermaid") {
+      downloadText(mermaid, `${fileBaseName}.mmd`, "text/plain");
+      return;
+    }
     try {
-      await exportCanvas(format, `${toSlug(currentProject.name) || "canvas"}-diagram`);
+      await navigator.clipboard.writeText(mermaid);
+      setExportNotice({ tone: "success", text: "Copied" });
     } catch (err) {
       console.error(err);
-      setExportError("Couldn't export the image. Try again.");
+      setExportNotice({ tone: "error", text: "Couldn't copy to the clipboard. Try again." });
     }
   }
 
@@ -128,6 +159,7 @@ export function EditorShell({ ownedProjects, sharedProjects, children }: EditorS
     <ProjectActionsContext value={actions}>
     <CanvasImportContext value={importTemplateRef}>
     <CanvasExportContext value={exportImageRef}>
+    <CanvasFocusContext value={focusNodesRef}>
     <CanvasSaveContext value={canvasSave}>
     <AiActivityContext value={setAiActivity}>
     <AiChatContext value={aiChatValue}>
@@ -143,9 +175,9 @@ export function EditorShell({ ownedProjects, sharedProjects, children }: EditorS
             setTemplatesOpenCount((count) => count + 1);
             setIsTemplatesOpen(true);
           }}
-          onExportImage={(format) => void exportImage(format)}
-          canExportImage={canvasHasNodes}
-          exportError={exportError}
+          onExport={(action) => void handleExport(action)}
+          canExport={canvasHasNodes}
+          exportNotice={exportNotice}
           saveStatus={saveStatus}
           onSave={() => saveCanvasRef.current?.()}
           designContext={currentProject?.designContext}
@@ -231,6 +263,7 @@ export function EditorShell({ ownedProjects, sharedProjects, children }: EditorS
     </AiChatContext>
     </AiActivityContext>
     </CanvasSaveContext>
+    </CanvasFocusContext>
     </CanvasExportContext>
     </CanvasImportContext>
     </ProjectActionsContext>
