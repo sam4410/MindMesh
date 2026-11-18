@@ -2,7 +2,9 @@ import { UserButton } from "@clerk/nextjs";
 import {
   AlertCircle,
   Check,
+  Copy,
   Download,
+  FileCode,
   FileImage,
   LayoutTemplate,
   Loader2,
@@ -18,11 +20,21 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import type { CanvasSaveStatus } from "@/hooks/use-canvas-autosave";
 import { designContextLabels, type DesignContext } from "@/lib/design-context";
 import type { ImageFormat } from "@/lib/export-image";
+
+// Export menu items: images (spec 50), then Mermaid and draw.io text (spec 51).
+export type ExportAction = ImageFormat | "mermaid" | "drawio" | "copy-mermaid";
+
+// Shown briefly under the Export button: a failure, or "Copied".
+export interface ExportNotice {
+  tone: "error" | "success";
+  text: string;
+}
 
 interface EditorNavbarProps {
   isSidebarOpen: boolean;
@@ -33,10 +45,10 @@ interface EditorNavbarProps {
   onToggleAiSidebar?: () => void;
   onShare?: () => void;
   onOpenTemplates?: () => void;
-  onExportImage?: (format: ImageFormat) => void;
-  // False on an empty (or still loading) canvas, which disables the image items.
-  canExportImage?: boolean;
-  exportError?: string | null;
+  onExport?: (action: ExportAction) => void;
+  // False on an empty (or still loading) canvas, which disables the export items.
+  canExport?: boolean;
+  exportNotice?: ExportNotice | null;
   saveStatus?: CanvasSaveStatus;
   onSave?: () => void;
   designContext?: DesignContext;
@@ -66,9 +78,9 @@ export function EditorNavbar({
   onToggleAiSidebar,
   onShare,
   onOpenTemplates,
-  onExportImage,
-  canExportImage = false,
-  exportError,
+  onExport,
+  canExport = false,
+  exportNotice,
   saveStatus = "idle",
   onSave,
   designContext,
@@ -140,25 +152,41 @@ export function EditorNavbar({
                   <Download className="h-4 w-4" />
                   Export
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-auto min-w-36">
-                  <DropdownMenuItem disabled={!canExportImage} onClick={() => onExportImage?.("png")}>
+                <DropdownMenuContent align="end" className="w-auto min-w-40">
+                  <DropdownMenuItem disabled={!canExport} onClick={() => onExport?.("png")}>
                     <FileImage />
                     PNG image
                   </DropdownMenuItem>
-                  <DropdownMenuItem disabled={!canExportImage} onClick={() => onExportImage?.("svg")}>
+                  <DropdownMenuItem disabled={!canExport} onClick={() => onExport?.("svg")}>
                     <FileImage />
                     {/* Browser-only: html-to-image SVGs hold HTML in a foreignObject, which slide
                         and design apps don't draw. A vector SVG export is in the tracker's backlog. */}
                     SVG (web)
                   </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem disabled={!canExport} onClick={() => onExport?.("mermaid")}>
+                    <FileCode />
+                    Mermaid (.mmd)
+                  </DropdownMenuItem>
+                  <DropdownMenuItem disabled={!canExport} onClick={() => onExport?.("drawio")}>
+                    <FileCode />
+                    draw.io (.drawio)
+                  </DropdownMenuItem>
+                  <DropdownMenuItem disabled={!canExport} onClick={() => onExport?.("copy-mermaid")}>
+                    <Copy />
+                    Copy Mermaid
+                  </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
-              {exportError && (
+              {exportNotice && (
                 <p
-                  role="alert"
-                  className="absolute top-full right-0 z-50 mt-2 rounded-md border border-surface-border bg-surface px-2 py-1 text-xs whitespace-nowrap text-error shadow-lg"
+                  role={exportNotice.tone === "error" ? "alert" : "status"}
+                  className={`absolute top-full right-0 z-50 mt-2 flex items-center gap-1 rounded-md border border-surface-border bg-surface px-2 py-1 text-xs whitespace-nowrap shadow-lg ${
+                    exportNotice.tone === "error" ? "text-error" : "text-success"
+                  }`}
                 >
-                  {exportError}
+                  {exportNotice.tone === "success" && <Check aria-hidden className="h-3.5 w-3.5" />}
+                  {exportNotice.text}
                 </p>
               )}
             </div>

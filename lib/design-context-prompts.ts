@@ -93,6 +93,46 @@ const PROJECT_TYPE_SECTIONS: Record<string, string> = {
     "## Deployment Pipeline: the stages in order, the environments, the approvals needed to promote a release, and how a release is rolled back.",
 };
 
+// The framework an architecture review (spec 52) scores against, per cloud.
+const REVIEW_FRAMEWORKS: Record<string, string> = {
+  aws: "the AWS Well-Architected Framework",
+  azure: "the Azure Well-Architected Framework",
+  gcp: "the Google Cloud Architecture Framework (Well-Architected)",
+  "on-prem": "general best practice for self-hosted systems (no single cloud provider's framework)",
+};
+
+// Controls a review checks for, per industry.
+const REVIEW_INDUSTRY_CONTROLS: Record<string, string> = {
+  finance:
+    "PCI-DSS and SOC 2: card data isolated in a PCI scope and tokenized, encryption in transit and at rest with managed keys, audit logging of access and changes, fraud checks in the payment flow, segregation of duties.",
+  healthcare:
+    "HIPAA: PHI isolated from other data, an audit log of every PHI access, encryption in transit and at rest with managed keys, consent handling, least-privilege access.",
+  ecommerce:
+    "E-commerce: card data kept out of scope through an external payment provider, bot and fraud protection at checkout, inventory and order consistency, scaling for traffic peaks.",
+  saas: "SaaS: tenant isolation of data and compute, tenant-aware authorization, per-tenant rate limits against noisy neighbours, usage metering.",
+  gaming:
+    "Gaming: DDoS protection, server-authoritative game state against cheating, regional deployment for latency, durable player session state.",
+  "public-sector":
+    "Public sector: data residency in-region, audit logging, strong identity verification, encryption with managed keys, accessibility of user-facing services.",
+};
+
+/**
+ * Context lines for the architecture review (spec 52): which framework to score against (generic
+ * best practice when the cloud is agnostic or unset), the project's labels, and the industry
+ * controls to check when an industry is set.
+ */
+export function buildReviewContext(ctx: DesignContext): string {
+  const framework =
+    REVIEW_FRAMEWORKS[ctx.cloudProvider ?? ""] ?? "general cloud architecture best practice (not any one provider's framework)";
+  const summary = formatDesignContext(ctx);
+  const controls = REVIEW_INDUSTRY_CONTROLS[ctx.industry ?? ""];
+  return [
+    `Review against ${framework}, mapped onto these pillars: reliability, security, cost (cost optimization), performance (performance efficiency), operations (operational excellence).`,
+    ...(summary ? [`Project context: ${summary}. Judge the design for this context (architecture style, project type).`] : []),
+    ...(controls ? [`Industry controls to check, with a security finding for each one the design lacks: ${controls}`] : []),
+  ].join("\n");
+}
+
 /**
  * Extra instructions for the spec generator (spec 46), or "" when no design context is set, so a
  * project without context gets exactly the standard structure.

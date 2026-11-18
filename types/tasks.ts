@@ -80,3 +80,57 @@ export const generateSpecPayloadSchema = specRequestSchema.extend({
 });
 
 export type GenerateSpecPayload = z.infer<typeof generateSpecPayloadSchema>;
+
+// Architecture review (spec 52): same canvas input as spec generation, without the chat.
+export const reviewRequestSchema = z.object({
+  roomId: z.string().min(1),
+  nodes: z.array(specNodeSchema).min(1, "The canvas is empty").max(SPEC_MAX_NODES),
+  edges: z.array(specEdgeSchema).max(SPEC_MAX_EDGES),
+});
+
+// As with specs, projectId and designContext come from the project the route resolved.
+export const reviewPayloadSchema = reviewRequestSchema.omit({ roomId: true }).extend({
+  projectId: z.string().min(1),
+  designContext: designContextSchema,
+});
+
+export type ReviewPayload = z.infer<typeof reviewPayloadSchema>;
+
+export const REVIEW_PILLARS = ["reliability", "security", "cost", "performance", "operations"] as const;
+export type ReviewPillar = (typeof REVIEW_PILLARS)[number];
+export const REVIEW_SEVERITIES = ["high", "medium", "low"] as const;
+export const REVIEW_MAX_FINDINGS = 20;
+
+// The model's answer, written for OpenAI's strict structured output (as in lib/design-actions.ts):
+// every field required, no length rules on strings. Number and array bounds are allowed there.
+export const reviewResultSchema = z.object({
+  summary: z.string().describe("Two or three sentences on the design's overall strengths and biggest risks"),
+  pillars: z
+    .array(
+      z.object({
+        pillar: z.enum(REVIEW_PILLARS),
+        score: z.number().int().min(1).max(5).describe("1 = major gaps, 5 = follows best practice"),
+        notes: z.string().describe("Why this score, in one or two sentences"),
+      })
+    )
+    .length(REVIEW_PILLARS.length)
+    .describe("Exactly one entry per pillar")
+    // JSON schema can't say "each pillar once", so it's checked when the answer is parsed.
+    .refine((pillars) => new Set(pillars.map((entry) => entry.pillar)).size === REVIEW_PILLARS.length, {
+      message: "Each pillar must appear exactly once",
+    }),
+  findings: z
+    .array(
+      z.object({
+        severity: z.enum(REVIEW_SEVERITIES),
+        pillar: z.enum(REVIEW_PILLARS),
+        title: z.string(),
+        detail: z.string().describe("What the problem is and why it matters for this design"),
+        recommendation: z.string().describe("A concrete change to the design"),
+        nodeIds: z.array(z.string()).describe("IDs of the canvas nodes involved; empty when it's about the design as a whole"),
+      })
+    )
+    .max(REVIEW_MAX_FINDINGS),
+});
+
+export type ReviewResult = z.infer<typeof reviewResultSchema>;
