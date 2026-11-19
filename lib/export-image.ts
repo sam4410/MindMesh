@@ -18,6 +18,8 @@ const EXCLUDED_CLASSES = [
   "react-flow__nodesselection",
   "react-flow__resize-control",
   "react-flow__handle",
+  // Comment counts (spec 54) are collaboration state, not part of the diagram.
+  "comment-badge",
 ];
 
 function isDiagramContent(node: HTMLElement) {
