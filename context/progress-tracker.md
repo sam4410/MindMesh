@@ -6,7 +6,7 @@ Update this file whenever the current phase, active feature, or implementation s
 - Commercial roadmap, Phase 2 (Segmentation and ease of use). Features 40–43 and 68–71 complete; 34–39 deferred.
 
 ## Current Goal
-- Feature 55: Version History API
+- Feature 56: Version History UI
 
 ## Completed
 
@@ -726,12 +726,41 @@ Update this file whenever the current phase, active feature, or implementation s
     - Not covered: `ghost-ai` resolving locally (the AI agent doesn't write comments yet), and a popover for a node at the right edge of the screen.
     - Both test projects and both Clerk users deleted; dev server stopped.
 
+- Feature 55: Version History API (2026-11-20).
+  - `prisma/models/project-version.prisma` (new): `ProjectVersion` with `id` (uuid, chosen before upload), `projectId` → `Project` (`onDelete: Cascade`), `name`, `createdById` (Clerk user ID), `createdByName`, `filePath` (Blob URL), `nodeCount`, `createdAt`, `@@index([projectId, createdAt])`; `Project.versions`. Migration `20261119204613_add_project_version` (new table, index and foreign key only) applied to local `ghost_ai` with `prisma migrate dev`, and to production Prisma Postgres with `prisma migrate deploy` on 2026-11-20 (status: up to date).
+  - `lib/project-version.ts` (new): `versionBlobFolder(projectId)` = `versions/{projectId}/` and `versionBlobPath(projectId, versionId)` = `versions/{projectId}/{versionId}.json`.
+  - `POST /api/projects/[projectId]/versions` with `{ name, nodes, edges }`:
+    - checks: 401 without a session; 403/404 from `projectAccessError` without access; 413 over 4 MB, like the canvas `PUT`; 400 for a name not 1–80 characters after trimming; 400 "Invalid canvas" when `isCanvasSnapshot` fails
+    - 409 "Version limit reached. Delete an old version first." at 50 versions
+    - uploads `serializeCanvas(nodes, edges)` to the version path (`access: "private"`, `addRandomSuffix: false`), then creates the row; if the row fails, the Blob is deleted
+    - returns 201 `{ id, name, createdByName, createdAt, nodeCount }`
+    - `createdByName` is the session's display name, the same one presence shows: full name, else username, else email
+  - `GET /api/projects/[projectId]/versions`: newest first, at most 50, `{ versions: [{ id, name, createdByName, createdAt, nodeCount }] }`, `cache-control: private, no-store`.
+  - `GET /api/projects/[projectId]/versions/[versionId]`: the version is looked up within the project (404 otherwise), and its snapshot JSON is streamed from Blob. The Blob URL is never exposed.
+  - `DELETE /api/projects/[projectId]/versions/[versionId]`: `requireProjectManager` (owner or admin; 403 for members and collaborators), 404 for a version outside the project, deletes the Blob then the row, 204.
+  - `DELETE /api/projects/[projectId]`: a shared `deleteBlobFolder(prefix)` runs the paged `list` + `del` loop for specs (unchanged behaviour), then for `versionBlobFolder(projectId)`, with its own 502 "Couldn't delete the project's versions."
+  - Shortcuts noted in code: the limit is count-then-create, so two saves at the same moment at 49 could both succeed. A save racing a project delete could leave one Blob behind if the upload finishes after the folder was cleared.
+  - Not added (scope limits): UI, restoring into the live canvas, diffs, automatic versions.
+  - TypeScript, ESLint and `npm run build` clean (both routes listed).
+  - API test (2026-11-20; local Playwright script calling the routes from signed-in pages, no AI calls). The dev server ran with `DATABASE_URL` overridden to local `ghost_ai`, so production Postgres was untouched; version files went to the real Blob store. Users: Alice Owner and Bob Builder (throwaway Clerk users). Alice owned projects P and Q; Bob was an outsider, then a collaborator on P.
+    - Validation: blank name, 81-character name, malformed node, missing `edges`, and a non-JSON body → 400 each.
+    - Create: `"  Before redesign  "` → 201 `{ id, name: "Before redesign", createdByName: "Alice Owner", createdAt, nodeCount: 2 }`.
+    - List: 200 with exactly `id, name, createdByName, createdAt, nodeCount`, `cache-control: private, no-store`.
+    - Read: 200 with 2 nodes and 1 edge (edge label kept), and the local `selected`/`measured` fields stripped.
+    - Bob as an outsider: list, read and create → 403; delete → 404, because `requireProjectManager` answers 404 without access. Signed out: list and create → 401.
+    - Bob as a collaborator: list and read → 200; create → 201 with `createdByName` "Bob Builder"; delete → 403.
+    - P's version through project Q: read and delete → 404; an unknown version ID → 404.
+    - Limit: versions 3–50 → 201 each; the 51st → 409 "Version limit reached. Delete an old version first." The list holds 50, newest first ("v50" … "Before redesign"), and Blob has 50 files under `versions/P/`.
+    - Alice deleted a version → 204; reading it → 404; list 49, Blob 49; the next save → 201.
+    - Deleting project P → 204: 0 Blobs left under `versions/P/`, and its versions list → 404.
+    - Projects P and Q and both Clerk users deleted; dev server stopped.
+
 ## In Progress
 
 - None.
 
 ## Next Up
-- Feature 55: Version History API (`context/feature-specs/55-version-history-api.md`)
+- Feature 56: Version History UI (`context/feature-specs/56-version-history-ui.md`)
 
 ## Roadmap
 
@@ -779,7 +808,7 @@ Billing and production hardening (specs 34–39) are deferred. The user decided 
 
 ### Phase 4: Team workflow and integrations
 - 54 Node comments — Complete
-- 55 Version history API — Not started
+- 55 Version history API — Complete
 - 56 Version history UI — Not started
 - 57 Approval status — Not started
 - 58 Decision record generation — Not started

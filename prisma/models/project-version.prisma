@@ -1,0 +1,15 @@
+// A saved canvas version; the snapshot itself lives in Vercel Blob at versions/{projectId}/{id}.json.
+model ProjectVersion {
+  // uuid so the route can choose the ID before uploading to the path that contains it.
+  id            String   @id @default(uuid())
+  projectId     String
+  project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name          String
+  createdById   String // Clerk user ID
+  createdByName String
+  filePath      String // Vercel Blob URL of the snapshot JSON
+  nodeCount     Int
+  createdAt     DateTime @default(now())
+
+  @@index([projectId, createdAt])
+}

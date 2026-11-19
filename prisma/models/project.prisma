@@ -22,6 +22,7 @@ model Project {
   collaborators  ProjectCollaborator[]
   taskRuns       TaskRun[]
   specs          ProjectSpec[]
+  versions       ProjectVersion[]
 
   @@index([ownerId])
   @@index([organizationId])
