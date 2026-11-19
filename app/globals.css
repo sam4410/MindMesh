@@ -136,3 +136,19 @@
     @apply bg-background font-sans text-foreground antialiased;
   }
 }
+
+/* Liveblocks Comments (spec 54) in the app's colors. ".dark" outranks the Liveblocks dark theme. */
+.dark .lb-root {
+  --lb-accent: var(--accent-primary);
+  --lb-accent-foreground: var(--bg-base);
+  --lb-background: var(--bg-surface);
+  --lb-foreground: var(--text-primary);
+  --lb-destructive: var(--state-error);
+  --lb-radius: 0.625rem;
+  --lb-button-radius: 0.5rem;
+}
+
+/* Liveblocks menus and pickers are portaled to <body>; keep them above the canvas toolbars. */
+.lb-portal {
+  z-index: 60;
+}

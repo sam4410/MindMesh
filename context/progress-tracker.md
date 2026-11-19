@@ -6,7 +6,7 @@ Update this file whenever the current phase, active feature, or implementation s
 - Commercial roadmap, Phase 2 (Segmentation and ease of use). Features 40–43 and 68–71 complete; 34–39 deferred.
 
 ## Current Goal
-- Feature 54: Node Comments
+- Feature 55: Version History API
 
 ## Completed
 
@@ -703,12 +703,35 @@ Update this file whenever the current phase, active feature, or implementation s
   - Re-test with a second real review (run 19.3 s; result 24 s after the click): 6 findings, now with "High (1)" shown first in red, then "Medium (4)", then the rest. Each of the 5 clickable findings selected exactly its nodes (5, 8, 2, 2 and 4) and every selected node landed fully inside the canvas and left of the open sidebar. No console errors.
   - Test project and Clerk user deleted; dev server and worker stopped.
 
+- Feature 54: Node Comments (2026-11-19).
+  - `liveblocks.config.ts`: `ThreadMetadata: { nodeId: string }`.
+  - `GET /api/users?ids=a,b,c` (new, `app/api/users/route.ts`): Clerk session required (401), 1–50 distinct IDs (400 otherwise), `clerkClient().users.getUserList({ userId: ids, limit })` (Clerk's default page size is 10), returns `[{ id, name, avatar }]` with the name as full name, else username, else "Anonymous". It never returns the email, unlike presence, which falls back to it, so a user with no name shows as "Anonymous" in comments.
+  - `collaborative-canvas.tsx`: `resolveUsers` on the `LiveblocksProvider` asks the route in chunks of 50 (with the Clerk bearer token, like the auth call) and returns users in the requested order. `ghost-ai` resolves to `AI_AGENT.info` locally; an ID the route doesn't return resolves to `undefined` (shown as anonymous). Each result also carries `color` from `getUserColor`, because the room's `UserMeta.info` type requires it; comments don't show it. `getUserColor` moved to the client-safe `lib/user-color.ts` (still re-exported from `lib/liveblocks.ts`).
+  - Comment button: in the selection toolbar (`node-ai-toolbar.tsx`), after Ask AI, only when a single node is selected, and not disabled while a design run is active. The AI buttons' "MindMesh is working…" tooltip moved to a wrapper around them; the toolbar is now labelled "Actions for the selection".
+  - `components/editor/node-comments.tsx` (new): the popover is a `NodeToolbar` to the right of the node (so it follows the node when it pans or zooms), a `role="dialog"` "Comments on <label>". It lists the node's threads from `useThreads({ query: { metadata: { nodeId } } })` with `Thread` (replies, reactions, resolve), and ends with a `Composer` (`metadata: { nodeId }`, autofocused) that starts a new thread. Escape and the close button close it and return focus to Comment; deselecting the node also closes it. Keys inside it stop at the dialog, so Backspace on a focused button doesn't delete the node; `nowheel`/`nokey` keep scrolling and typing off the canvas.
+  - Styles: `@liveblocks/react-ui/styles.css` plus `styles/dark/attributes.css` (the app sets `class="dark"` on `<html>`), imported in `collaborative-canvas.tsx`. `globals.css` sets the Liveblocks CSS variables (`--lb-accent`, `--lb-background`, `--lb-foreground`, `--lb-destructive`, radii) to the app tokens under `.dark .lb-root`, and gives `.lb-portal` `z-index: 60`. `components/ui` unchanged.
+  - Counts: the canvas reads `useThreads()` once and passes unresolved counts per node through `CommentCountsContext`. `canvas-node.tsx` shows a cyan badge (icon plus count, screen-reader text "N unresolved comment threads") at the node's top-right while the count is above 0. The badge carries `comment-badge`, which `lib/export-image.ts` now leaves out of PNG and SVG exports.
+  - **Known limitation (spec 54):** threads on deleted nodes stay in Liveblocks but aren't shown anywhere; deleting a node doesn't delete its threads.
+  - Not added (scope limits): email or inbox notifications, comments on edges or the canvas background.
+  - TypeScript, ESLint and `npm run build` clean (`/api/users` listed).
+  - Browser test with two users (2026-11-19; local Playwright script at 1440×900, dev server only, no AI calls). Alice Reviewer owned the project and Bob Builder was added as a collaborator (two throwaway Clerk users with first and last names). The canvas held the Payments template; the test node was Merchant Apps.
+    - Comment button: shown for a single selected node; with two nodes selected (Ctrl-click), the toolbar keeps its AI actions and the Comment button is gone.
+    - Alice clicked Comment (`aria-expanded` true): the "Comments on Merchant Apps" popover opened to the right of the node, with the composer focused. She typed a comment and pressed Enter: one thread by "Alice Reviewer", and the node's badge showed 1 ("1 unresolved comment thread").
+    - Bob's badge showed 1 live, without a reload. His popover showed the thread with "Alice Reviewer", her comment and a Clerk avatar. He replied from the thread's reply box.
+    - Alice saw the reply live: 2 comments by "Alice Reviewer" and "Bob Builder", both with Clerk avatars.
+    - Backspace with the popover's close button focused left all 11 nodes; Escape closed the popover and returned focus to Comment.
+    - "Resolve thread" (Alice): both badges disappeared live, and the resolved thread stays listed in the popover.
+    - `/api/users`: Bob's, Alice's and an unknown ID returned the two users (unknown left out), each with only `id`, `name`, `avatar`. 51 IDs → 400; no `ids` → 400; signed out → 401.
+    - Console errors: only the two deliberate 400s from those checks. Screenshots: the popover sits beside the node in the app's colours. The node was at the left edge of the fitted view, so its colour and AI toolbars were cut off at the screen edge (existing toolbar behaviour, not new).
+    - Not covered: `ghost-ai` resolving locally (the AI agent doesn't write comments yet), and a popover for a node at the right edge of the screen.
+    - Both test projects and both Clerk users deleted; dev server stopped.
+
 ## In Progress
 
 - None.
 
 ## Next Up
-- Feature 54: Node Comments (`context/feature-specs/54-node-comments.md`)
+- Feature 55: Version History API (`context/feature-specs/55-version-history-api.md`)
 
 ## Roadmap
 
@@ -755,7 +778,7 @@ Billing and production hardening (specs 34–39) are deferred. The user decided 
 - 53 Architecture review UI — Complete (billing parts deferred)
 
 ### Phase 4: Team workflow and integrations
-- 54 Node comments — Not started
+- 54 Node comments — Complete
 - 55 Version history API — Not started
 - 56 Version history UI — Not started
 - 57 Approval status — Not started

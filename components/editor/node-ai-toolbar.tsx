@@ -1,6 +1,8 @@
 import { NodeToolbar, Position } from "@xyflow/react";
-import { Cloud, Copy, MessageSquare, TrendingUp, type LucideIcon } from "lucide-react";
+import { Cloud, Copy, MessageCircle, MessageSquare, TrendingUp, type LucideIcon } from "lucide-react";
+import { useRef, useState } from "react";
 
+import { NodeComments } from "@/components/editor/node-comments";
 import { useAiPromptActions } from "@/hooks/use-ai-chat";
 import type { CanvasNode } from "@/types/canvas";
 
@@ -41,10 +43,16 @@ interface NodeAiToolbarProps {
   disabled: boolean;
 }
 
-// AI actions for the selection (spec 48), below it so it doesn't cover the color toolbar above a
-// single selected node. Each action is about the selected nodes only.
+// Actions for the selection, below it so it doesn't cover the color toolbar above a single
+// selected node: AI actions (spec 48) about the selected nodes only, and Comment (spec 54) for a
+// single node.
 export function NodeAiToolbar({ nodes, disabled }: NodeAiToolbarProps) {
   const { sendDesignPrompt, openAiPrompt, isDesignBusy } = useAiPromptActions();
+  // The node whose comments are open; they close when the selection changes.
+  const [commentsNodeId, setCommentsNodeId] = useState<string | null>(null);
+  const commentButtonRef = useRef<HTMLButtonElement>(null);
+  const singleNode = nodes.length === 1 ? nodes[0] : null;
+  if (commentsNodeId !== null && commentsNodeId !== singleNode?.id) setCommentsNodeId(null);
   if (nodes.length === 0) return null;
 
   const ids = nodes.map((node) => node.id);
@@ -59,14 +67,21 @@ export function NodeAiToolbar({ nodes, disabled }: NodeAiToolbarProps) {
       ? `Select at most ${MAX_FOCUS_NODES} nodes`
       : undefined;
 
+  function closeComments() {
+    setCommentsNodeId(null);
+    commentButtonRef.current?.focus();
+  }
+
   return (
+    <>
     <NodeToolbar nodeId={ids} isVisible position={Position.Bottom} offset={12} className="nodrag nopan">
       <div
         role="toolbar"
-        aria-label="AI actions for the selection"
-        title={title}
+        aria-label="Actions for the selection"
         className="flex items-center gap-0.5 rounded-full border border-surface-border bg-surface/90 p-1 shadow-lg backdrop-blur"
       >
+        {/* The title explains disabled AI buttons, which take no pointer events themselves. */}
+        <div className="flex items-center gap-0.5" title={title}>
         {QUICK_ACTIONS.map(({ label, icon: Icon, prompt }) => (
           <button
             key={label}
@@ -89,7 +104,29 @@ export function NodeAiToolbar({ nodes, disabled }: NodeAiToolbarProps) {
           <MessageSquare aria-hidden className="h-3.5 w-3.5 text-ai-text" />
           Ask AI…
         </button>
+        </div>
+        {singleNode && (
+          <>
+            <span aria-hidden className="mx-0.5 h-4 w-px bg-surface-border" />
+            {/* Not tied to the AI's state: commenting works while a design run is active. */}
+            <button
+              ref={commentButtonRef}
+              type="button"
+              aria-haspopup="dialog"
+              aria-expanded={commentsNodeId === singleNode.id}
+              onClick={() => (commentsNodeId ? closeComments() : setCommentsNodeId(singleNode.id))}
+              className={BUTTON_CLASS}
+            >
+              <MessageCircle aria-hidden className="h-3.5 w-3.5" />
+              Comment
+            </button>
+          </>
+        )}
       </div>
     </NodeToolbar>
+    {singleNode && commentsNodeId === singleNode.id && (
+      <NodeComments nodeId={singleNode.id} nodeName={labels} onClose={closeComments} />
+    )}
+    </>
   );
 }

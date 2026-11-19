@@ -1,6 +1,9 @@
 "use client";
 
 import "@xyflow/react/dist/style.css";
+// Comments UI (spec 54); the dark theme follows the "dark" class on <html>. Colors: globals.css.
+import "@liveblocks/react-ui/styles.css";
+import "@liveblocks/react-ui/styles/dark/attributes.css";
 
 import { useAuth } from "@clerk/nextjs";
 import {
@@ -10,6 +13,7 @@ import {
   useErrorListener,
   useRedo,
   useRoom,
+  useThreads,
   useUndo,
   useUpdateMyPresence,
 } from "@liveblocks/react";
@@ -32,6 +36,7 @@ import { Loader2, WifiOff } from "lucide-react";
 import {
   useEffect,
   useEffectEvent,
+  useMemo,
   useRef,
   useState,
   type DragEvent,
@@ -43,6 +48,7 @@ import { CanvasControls } from "@/components/editor/canvas-controls";
 import { CanvasEdgeView } from "@/components/editor/canvas-edge";
 import { CanvasNodeView } from "@/components/editor/canvas-node";
 import { LiveCursors } from "@/components/editor/live-cursors";
+import { CommentCountsContext } from "@/components/editor/node-comments";
 import { NodeAiToolbar } from "@/components/editor/node-ai-toolbar";
 import { OnboardingTour } from "@/components/editor/onboarding-tour";
 import { PresenceAvatars } from "@/components/editor/presence-avatars";
@@ -50,6 +56,7 @@ import { ShapePanel } from "@/components/editor/shape-panel";
 import { Button } from "@/components/ui/button";
 import type { CanvasTemplate } from "@/components/editor/starter-templates";
 import { useSyncAiChat } from "@/hooks/use-ai-chat";
+import { AI_AGENT } from "@/lib/ai-status";
 import { useSyncAiActivity } from "@/hooks/use-ai-status";
 import { useCanvasAutosave, type CanvasLoadState } from "@/hooks/use-canvas-autosave";
 import { useRegisterCanvasExport } from "@/hooks/use-canvas-export";
@@ -65,6 +72,7 @@ import {
   type ShapeDragPayload,
 } from "@/lib/canvas-shapes";
 import { exportCanvasImage } from "@/lib/export-image";
+import { getUserColor } from "@/lib/user-color";
 import {
   BOUNDARY_Z_INDEX,
   DEFAULT_NODE_COLOR,
@@ -79,6 +87,8 @@ const nodeTypes: NodeTypes = { canvasNode: CanvasNodeView };
 const edgeTypes: EdgeTypes = { canvasEdge: CanvasEdgeView };
 // React Flow merges these into each new connection before onConnect, so Liveblocks stores them.
 const defaultEdgeOptions: DefaultEdgeOptions = { ...NEW_EDGE_DEFAULTS, data: { label: "" } };
+// GET /api/users takes at most this many IDs per request.
+const USER_IDS_PER_REQUEST = 50;
 
 interface CollaborativeCanvasProps {
   // The project ID, which doubles as the Liveblocks room ID.
@@ -106,8 +116,33 @@ export function CollaborativeCanvas({ roomId }: CollaborativeCanvasProps) {
     return { error: res.status < 500 ? "forbidden" : "server_error", reason: await res.text() };
   }
 
+  // Names and avatars for comment threads (spec 54), in the order Liveblocks asks for them.
+  // The AI agent isn't a Clerk user, so it resolves locally.
+  async function resolveUsers({ userIds }: { userIds: string[] }) {
+    const ids = [...new Set(userIds.filter((id) => id !== AI_AGENT.id))];
+    const found = new Map<string, { name: string; avatar: string }>();
+    const token = ids.length > 0 ? await getToken() : null;
+    for (let i = 0; i < ids.length; i += USER_IDS_PER_REQUEST) {
+      const chunk = ids.slice(i, i + USER_IDS_PER_REQUEST);
+      const res = await fetch(`/api/users?ids=${encodeURIComponent(chunk.join(","))}`, {
+        headers: token ? { authorization: `Bearer ${token}` } : {},
+      });
+      // Unresolved users show as anonymous rather than failing the whole thread.
+      if (!res.ok) continue;
+      for (const user of (await res.json()) as { id: string; name: string; avatar: string }[]) {
+        found.set(user.id, user);
+      }
+    }
+    return userIds.map((id) => {
+      if (id === AI_AGENT.id) return AI_AGENT.info;
+      const user = found.get(id);
+      // color isn't shown in comments; it's set so the info matches the room's UserMeta.
+      return user && { name: user.name, avatar: user.avatar, color: getUserColor(id) };
+    });
+  }
+
   return (
-    <LiveblocksProvider authEndpoint={authenticate} preventUnsavedChanges>
+    <LiveblocksProvider authEndpoint={authenticate} resolveUsers={resolveUsers} preventUnsavedChanges>
       <RoomProvider id={roomId} initialPresence={{ cursor: null, thinking: false }}>
         <ConnectionErrorFallback>
           <ClientSideSuspense fallback={<CanvasLoading />}>
@@ -153,6 +188,16 @@ function Canvas() {
   const [drewWhileLoading, setDrewWhileLoading] = useState(false);
   // Bumped by "Show tour" in the user menu.
   const [tourReplay, setTourReplay] = useState(0);
+  // One subscription for the whole canvas; nodes read their unresolved count from context.
+  // Threads on deleted nodes stay in Liveblocks but no node shows them.
+  const { threads } = useThreads();
+  const commentCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const thread of threads ?? []) {
+      if (!thread.resolved) counts.set(thread.metadata.nodeId, (counts.get(thread.metadata.nodeId) ?? 0) + 1);
+    }
+    return counts;
+  }, [threads]);
 
   // An effect event so this sees the room as it is when the fetch finishes: someone may have
   // started drawing in the meantime, and then the saved canvas must not land on top.
@@ -317,7 +362,7 @@ function Canvas() {
   }
 
   return (
-    <>
+    <CommentCountsContext value={commentCounts}>
     {/* tabIndex: clicking the empty canvas focuses nothing otherwise, and keys would miss this div. */}
     <div
       ref={canvasRef}
@@ -368,7 +413,7 @@ function Canvas() {
     {/* Outside the canvas div, so its keys don't reach the canvas's handlers. Waits for the
         canvas to load, so it doesn't open over the loading state. */}
     {loadState === "ready" && <OnboardingTour replay={tourReplay} returnFocusRef={canvasRef} />}
-    </>
+    </CommentCountsContext>
   );
 }
 

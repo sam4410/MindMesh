@@ -1,6 +1,8 @@
 import { Handle, NodeResizer, Position, useReactFlow, type NodeProps } from "@xyflow/react";
-import { useState } from "react";
+import { MessageCircle } from "lucide-react";
+import { use, useState } from "react";
 
+import { CommentCountsContext } from "@/components/editor/node-comments";
 import { NodeColorToolbar } from "@/components/editor/node-color-toolbar";
 import { ShapeGraphic } from "@/components/editor/shape-graphic";
 import { MAX_BOUNDARY_SIZE, MIN_NODE_SIZE } from "@/lib/canvas-shapes";
@@ -19,6 +21,7 @@ export function CanvasNodeView({ id, data, selected }: NodeProps<CanvasNode>) {
   // A boundary outlines a group: label top-left, no connection handles, larger resize limit.
   const isBoundary = data.shape === "boundary";
   const textColor = data.textColor ?? DEFAULT_NODE_TEXT_COLOR;
+  const commentCount = use(CommentCountsContext).get(id) ?? 0;
 
   return (
     <div
@@ -103,6 +106,14 @@ export function CanvasNodeView({ id, data, selected }: NodeProps<CanvasNode>) {
       </div>
       {service && <ServiceBadge service={service} label={data.label} />}
       </div>
+      {commentCount > 0 && (
+        // comment-badge: left out of image exports.
+        <span className="comment-badge pointer-events-none absolute -top-2 -right-2 flex h-5 items-center gap-0.5 rounded-full bg-brand px-1.5 text-[10px] font-semibold text-(--bg-base) shadow">
+          <MessageCircle aria-hidden className="h-3 w-3" />
+          {commentCount}
+          <span className="sr-only">{commentCount === 1 ? " unresolved comment thread" : " unresolved comment threads"}</span>
+        </span>
+      )}
     </div>
   );
 }

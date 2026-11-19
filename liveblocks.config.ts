@@ -15,6 +15,10 @@ declare global {
         color: string;
       };
     };
+    // Every comment thread belongs to one canvas node (spec 54).
+    ThreadMetadata: {
+      nodeId: string;
+    };
   }
 }
 
