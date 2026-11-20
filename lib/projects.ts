@@ -1,9 +1,10 @@
 import { getDesignContext, type DesignContext } from "@/lib/design-context";
+import type { ApprovalState } from "@/lib/project-approval";
 import { getProjectRole, type Identity } from "@/lib/project-access";
 import { prisma } from "@/lib/prisma";
 import type { ProjectRole } from "@/lib/project-roles";
 
-export interface ProjectSummary {
+export interface ProjectSummary extends ApprovalState {
   id: string;
   name: string;
   deletionPending: boolean;
@@ -21,6 +22,9 @@ const select = {
   architectureStyle: true,
   industry: true,
   projectType: true,
+  approvalStatus: true,
+  approvedByName: true,
+  approvedAt: true,
 } as const;
 
 // "My Projects" for the active workspace (every project in the active organization, or the user's
@@ -54,6 +58,9 @@ export async function getProjectsForUser(identity: Identity) {
     deletionPending: project.deletionPending,
     role: getProjectRole(project, identity),
     designContext: getDesignContext(project),
+    approvalStatus: project.approvalStatus,
+    approvedByName: project.approvedByName,
+    approvedAt: project.approvedAt?.toISOString() ?? null,
   });
   return { owned: owned.map(toSummary), shared: shared.map(toSummary) };
 }

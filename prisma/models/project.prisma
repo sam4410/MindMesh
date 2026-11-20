@@ -3,6 +3,13 @@ enum ProjectStatus {
   ARCHIVED
 }
 
+// Sign-off state (spec 57); separate from ProjectStatus above.
+enum ApprovalStatus {
+  DRAFT
+  IN_REVIEW
+  APPROVED
+}
+
 model Project {
   id             String                @id @default(cuid())
   ownerId        String // Clerk user ID
@@ -10,6 +17,11 @@ model Project {
   name           String
   description    String?
   status         ProjectStatus         @default(DRAFT)
+  approvalStatus ApprovalStatus        @default(DRAFT)
+  // Set while approvalStatus is APPROVED, cleared when it leaves APPROVED.
+  approvedById   String? // Clerk user ID
+  approvedByName String?
+  approvedAt     DateTime?
   canvasJsonPath String? // Vercel Blob URL for the canvas snapshot, set once one is saved
   deletionPending Boolean               @default(false)
   // Design context: IDs from lib/design-context.ts, validated in the app rather than as enums
