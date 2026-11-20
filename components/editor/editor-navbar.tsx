@@ -11,6 +11,7 @@ import {
   Loader2,
   PanelLeftClose,
   PanelLeftOpen,
+  Plug,
   Save,
   Share2,
   Sparkles,
@@ -266,7 +267,13 @@ export function EditorNavbar({
           </>
         )}
         {/* In the workspace it sits in the canvas's presence panel instead. */}
-        {!projectName && <UserButton />}
+        {!projectName && (
+          <UserButton>
+            <UserButton.MenuItems>
+              <UserButton.Link label="Integrations" labelIcon={<Plug className="h-4 w-4" />} href="/settings/integrations" />
+            </UserButton.MenuItems>
+          </UserButton>
+        )}
       </div>
     </header>
   );
