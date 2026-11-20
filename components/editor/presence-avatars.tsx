@@ -3,7 +3,7 @@
 import { UserButton, useAuth } from "@clerk/nextjs";
 import { shallow, useOthersMapped } from "@liveblocks/react";
 import { Panel } from "@xyflow/react";
-import { Compass } from "lucide-react";
+import { Compass, Plug } from "lucide-react";
 
 const MAX_AVATARS = 5;
 // Collaborator avatars and the Clerk UserButton share this size so the group lines up.
@@ -72,6 +72,8 @@ export function PresenceAvatars({ onShowTour }: { onShowTour: () => void }) {
       )}
       <UserButton appearance={{ elements: { avatarBox: AVATAR_SIZE } }}>
         <UserButton.MenuItems>
+          {/* Where Billing goes once specs 34–39 return; Integrations sits next to it (spec 60). */}
+          <UserButton.Link label="Integrations" labelIcon={<Plug className="h-4 w-4" />} href="/settings/integrations" />
           <UserButton.Action label="Show tour" labelIcon={<Compass className="h-4 w-4" />} onClick={onShowTour} />
         </UserButton.MenuItems>
       </UserButton>

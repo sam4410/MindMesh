@@ -1,0 +1,19 @@
+enum IntegrationProvider {
+  ATLASSIAN
+}
+
+// A workspace's connection to an outside tool (spec 60). One per provider per workspace.
+model Integration {
+  id               String              @id @default(cuid())
+  // The workspace: the Clerk organization ID, or the user ID in a personal workspace (as billing uses).
+  billingAccountId String
+  provider         IntegrationProvider
+  siteUrl          String // e.g. https://acme.atlassian.net
+  email            String // the Atlassian account the API token belongs to
+  encryptedToken   String // lib/crypto.ts encryptSecret output; never returned or logged
+  createdById      String // Clerk user ID of whoever connected it last
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  @@unique([billingAccountId, provider])
+}

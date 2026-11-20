@@ -872,12 +872,61 @@ Update this file whenever the current phase, active feature, or implementation s
     - No console errors. Screenshot: both buttons, the chips and the row with its violet Spec badge.
     - Both test projects and the Clerk user deleted; dev server and worker stopped.
 
+- Feature 60: Atlassian Connection (2026-11-20).
+  - Billing deferred, as the spec's Billing Deferred section says: no `lib/env.ts`. `INTEGRATIONS_ENCRYPTION_KEY` is documented in Session Notes, and `lib/crypto.ts` throws "INTEGRATIONS_ENCRYPTION_KEY is not set (generate one with `openssl rand -base64 32`)" when it's missing, or a length error when it isn't 32 bytes.
+  - `lib/crypto.ts` (new, server-only): AES-256-GCM with Node `crypto`, the key read from `INTEGRATIONS_ENCRYPTION_KEY` (base64, 32 bytes) on each call.
+    - `encryptSecret(plain)` returns `base64(iv).base64(tag).base64(ciphertext)` with a random 12-byte IV.
+    - `decryptSecret(value)` throws on tampering, a different key, or a malformed value.
+    - `lib/crypto.test.ts` is a `node:test` self-check: `node --import tsx --test lib/crypto.test.ts`, 7/7 pass (round trip; a fresh IV each time; tampered ciphertext; tampered tag; wrong key; malformed value; missing key names the variable).
+  - Schema (`prisma/models/integration.prisma`, new): enum `IntegrationProvider { ATLASSIAN }` and `Integration` with `billingAccountId` (organization ID, or user ID in a personal workspace), `provider`, `siteUrl`, `email`, `encryptedToken`, `createdById`, `createdAt`, `updatedAt`, `@@unique([billingAccountId, provider])`.
+    - Migration `20261120172142_add_integration` (a new enum and table only). Applied to local `ghost_ai` with `prisma migrate dev`, and to production Prisma Postgres with `prisma migrate deploy` on 2026-11-20 (status: up to date).
+  - `lib/integrations.ts` (new):
+    - `workspaceAccountId` (`orgId ?? userId`, the account ID billing will use)
+    - `canManageIntegrations` (no active organization, or `org:admin`)
+    - `listIntegrations` (selects only provider, site, email and `updatedAt`, so the token never leaves the database)
+    - `normalizeAtlassianSite` (trimmed, lowercased, trailing slash dropped; must match `https://<name>.atlassian.net`, so the verification request can't be aimed at any other host)
+    - `verifyAtlassian`: `GET {site}/rest/api/3/myself` with basic auth (`email:apiToken`), a 10-second timeout and no redirects. It logs only the site and status or error name, never the token.
+  - Routes:
+    - `GET /api/integrations` returns `[{ provider, siteUrl, email, connectedAt }]` for the active workspace (`connectedAt` is the last connect), `cache-control: private, no-store`, never the token.
+    - `PUT /api/integrations/atlassian` with `{ siteUrl, email, apiToken }`: 401 without a session; 403 "Only an organization admin can manage integrations" for an organization member; 400 for a site that isn't `*.atlassian.net`, a bad email, or an empty token.
+      - It verifies the details (400 "Couldn't connect with these details" on any failure), encrypts the token, upserts the row on `(billingAccountId, ATLASSIAN)`, and returns the summary.
+    - `DELETE /api/integrations/atlassian`: same permission rule; deletes the row; 204.
+  - `app/settings/integrations/page.tsx` (new; the session read sits in Suspense for Cache Components) with "Back to projects" and an Atlassian card (`components/settings/atlassian-card.tsx`):
+    - connected: site, email and connected date, with a "Connected" badge, and a Disconnect button for admins
+    - not connected: a form (site URL, email, API token as a password input, and a link to Atlassian's API token page) for admins; others see "Ask an organization admin…"
+    - errors from the route show under the card; the token field clears after a successful connect, and `router.refresh()` reloads the card
+  - `UserButton` menus (the workspace presence panel and the editor home navbar) gain an "Integrations" link to `/settings/integrations`. There's no Billing item yet (billing is deferred), so it's the first custom item, with a comment marking where Billing goes.
+  - Not added (scope limits): OAuth (`shortcut:` in the route: move to Atlassian OAuth 2.0 for per-user permissions), Confluence publishing, Jira issues.
+  - TypeScript, ESLint and `npm run build` clean (both routes and the page listed). A key was generated into the gitignored `.env.local` for local runs (not printed).
+  - Test without real Atlassian details (2026-11-20; local Playwright script, dev server on the production database).
+    - Users: Alice and Bob (throwaway Clerk users) and a throwaway organization created by Alice (so she's `org:admin`), with Bob added as `org:member`.
+    - Clerk opened Alice's session in that organization, and the first run went wrong because of it, so the test switches her to her personal workspace first (`Clerk.setActive({ organization: null })`).
+    - Stored connections were seeded with a small helper calling `encryptSecret`, as the PUT route does, since no real site was available.
+    - Alice, personal workspace:
+      - `GET` → `[]`.
+      - `PUT` → 400 for `https://evil.example.com`, `http://acme.atlassian.net`, `https://acme.atlassian.net/wiki` and an empty body ("Site URL must look like https://your-site.atlassian.net"), a bad email ("Enter a valid email address") and a blank token ("Enter an API token").
+      - `DELETE` with nothing connected → 204.
+    - Wrong details: `PUT` to `https://Mindmesh-f60-nonexistent-zq7.atlassian.net/` (normalized to lowercase without the slash) with a made-up email and token → 400 "Couldn't connect with these details" in 688 ms (Atlassian answered 404), and no row was saved. The settings form showed the same message as an alert and kept the form. Signed out: `GET`, `PUT` and `DELETE` → 401.
+    - Settings page, not connected: the form with a password-type token field and the link to `https://id.atlassian.com/manage-profile/security/api-tokens`.
+    - With a seeded connection:
+      - `GET` returned exactly `[{ provider, siteUrl, email, connectedAt }]`; the response contained neither the token nor any "token"/"encrypted" field.
+      - The database value was 3 dot-separated parts that don't contain the plain token and decrypt to it.
+      - The page showed the site, email, date, the "Connected" badge and Disconnect, and the page HTML didn't contain the token.
+      - Disconnect from the page removed the row and brought the form back.
+    - Organization:
+      - Bob (member): `GET` → 1 item without the token; `PUT` and `DELETE` → 403 "Only an organization admin can manage integrations", and the row stayed. His page showed the connection with no Disconnect.
+      - Alice (admin): `GET` → 1 item; `PUT` with wrong details → 400 (past the permission check); `DELETE` → 204 and the row was gone. Bob's page then said "Not connected. Ask an organization admin to connect your Atlassian site."
+    - The "Integrations" item in the editor home's `UserButton` menu opened `/settings/integrations`.
+    - Console errors: only the expected 400s (Alice) and 403s (Bob). The dev server log has no test token; the verification logs only `{ siteUrl, status: 404 }`.
+    - Test rows purged; the organization and both Clerk users deleted; dev server stopped.
+    - **Not tested: connecting a real Atlassian site** (it needs the user's site URL, email and API token). That's the spec's "An admin can connect a real Atlassian site" check.
+
 ## In Progress
 
-- None.
+- Feature 60: Atlassian Connection, tested except a real Atlassian connection (the user's site and API token). `INTEGRATIONS_ENCRYPTION_KEY` still has to be set in Vercel (Production and Preview) by the user.
 
 ## Next Up
-- Feature 60: Atlassian Connection (`context/feature-specs/60-atlassian-connection.md`)
+- Feature 61: Confluence Spec Publish (`context/feature-specs/61-confluence-spec-publish.md`)
 
 ## Roadmap
 
@@ -930,7 +979,7 @@ Billing and production hardening (specs 34–39) are deferred. The user decided 
 - 57 Approval status — Complete
 - 58 Decision record generation — Complete (billing parts deferred)
 - 59 Decision record UI — Complete (billing parts deferred)
-- 60 Atlassian connection — Not started
+- 60 Atlassian connection — Implemented and tested (real-site connection and Vercel env var pending)
 - 61 Confluence spec publish — Not started
 - 62 Jira issues from design — Not started
 - 63 GitHub repository link — Not started
@@ -972,6 +1021,7 @@ Billing and production hardening (specs 34–39) are deferred. The user decided 
 
 ## Session Notes
 
+- `INTEGRATIONS_ENCRYPTION_KEY` (spec 60): base64 of 32 random bytes (`openssl rand -base64 32`), the AES-256-GCM key `lib/crypto.ts` uses to encrypt integration tokens. Set in the gitignored `.env.local` for local runs (2026-11-20). It must also be set in Vercel (Production and Preview) and, once tasks decrypt tokens (specs 61–62), in Trigger.dev. Changing it makes stored tokens unreadable, so workspaces would have to reconnect. `lib/env.ts` (spec 38) is deferred, so nothing validates it at startup.
 - Next.js 16.4.3 with React 19.3.0 and Tailwind CSS v4.
 - shadcn CLI 4.23.0 (base-nova preset); it auto-detected Tailwind v4.
 - lucide-react ^1.66.0 installed as a direct dependency.
