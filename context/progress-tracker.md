@@ -6,7 +6,7 @@ Update this file whenever the current phase, active feature, or implementation s
 - Commercial roadmap, Phase 2 (Segmentation and ease of use). Features 40–43 and 68–71 complete; 34–39 deferred.
 
 ## Current Goal
-- Feature 58: Decision Record Generation
+- Feature 60: Atlassian Connection
 
 ## Completed
 
@@ -814,12 +814,70 @@ Update this file whenever the current phase, active feature, or implementation s
     - Console errors: none for Alice; for Bob, only the seven expected 400/403/409 responses from the API checks.
     - The test projects and both Clerk users deleted; dev server stopped.
 
+- Feature 58: Decision Record Generation (2026-11-20).
+  - Billing deferred, as the spec's Billing Deferred section says: no usage check in `POST /api/ai/adr`, no `ADR` `TaskRunKind` value or `add_adr_task_kind` migration (`TaskRun` has no `kind` field yet), and no `adrRunsPerMonth` in `PLANS` (no `PLANS` exists yet). The `TaskRun` record is created as the spec route does.
+  - Schema: enum `SpecKind { SPEC ADR }` and `ProjectSpec.kind` (default `SPEC`).
+    - Migration `20261120153133_add_spec_kind` adds the enum and the column; existing specs become `SPEC`. Applied to local `ghost_ai` with `prisma migrate dev`, and to production Prisma Postgres with `prisma migrate deploy` on 2026-11-20 (status: up to date). The specs list and download routes and both generate tasks read or write `kind`, so production had to be migrated before this code runs against it.
+    - The Blob path is unchanged (`specs/{projectId}/{specId}.md`), so download and project deletion work as before.
+  - `lib/project-spec.ts`: `SpecKind` type, and `specFilename(projectName, createdAt, specId, kind)` gives `…-spec-…md` or `…-adr-…md`.
+  - `lib/project-spec-store.ts` (new): `saveProjectDocument(projectId, markdown, kind)`, moved from `saveSpec` in `generate-spec` with the same behaviour: an `AbortTaskRunError` if the project is gone or being deleted, upload to Blob, create the row with `kind`, and delete the Blob if the row fails. `generate-spec` calls it with `SPEC`.
+  - `lib/document-prompt.ts` (new): `describeCanvasAndChat` (the canvas nodes, boundaries, edges and chat as prompt lines) and `unwrapFence`, moved from `generate-spec` so both tasks share them. `generate-spec` still adds `buildSpecContextSections` after them.
+    - Spec output is unchanged: the old and new `describeContext` produced identical prompt text for three sample payloads (with a boundary, a managed service, chat and an AWS + finance + SaaS context; with no context; and a single node with no edges or chat).
+  - `trigger/generate-adr.ts` (new): `schemaTask` `generate-adr` on `generateSpecPayloadSchema` (the same payload as `generate-spec`), Gemini `gemini-3.5-flash` via `@ai-sdk/google`, 180 s timeout, the config's default retries.
+    - The prompt finds the 3 to 8 most significant decisions (database, messaging, cloud and managed services, sync versus async, service split) and writes one document, "# <System> Architecture Decision Records", with records `## ADR-{n}: {title}`, `**Status:** Accepted`, `### Context`, `### Decision`, `### Alternatives considered`, `### Consequences`.
+    - Decisions come from the chat, checked against the canvas. When the chat has none, it records the decisions visible in the design and says in each Context that they were inferred.
+    - Prompt input: the shared canvas and chat lines, plus "Design context: …" when one is set (not the spec-only section instructions).
+    - An answer without a single `## ADR-n:` heading fails the run instead of being saved.
+    - Metadata `status` goes `processing` then `completed` or `failed`, and `specId` is set as in `generate-spec`.
+  - `POST /api/ai/adr` mirrors `POST /api/ai/spec`: auth, the same request schema, project access from `roomId`, design context from the project, trigger `generate-adr`, a `TaskRun` record (the run is cancelled if the record fails), 202 `{ runId }`. `POST /api/ai/adr/token` re-exports the spec token route, since a run token works the same for either task.
+  - `GET /api/projects/[projectId]/specs` includes `kind` in each item, with the matching filename; the download route names ADRs `…-adr-…md`.
+    - Until Feature 59, the Specs tab lists ADR documents among the specs; they show with their `-adr-` filename.
+  - Not added (scope limits): UI, changes to spec output, editing ADRs.
+  - TypeScript, ESLint and `npm run build` clean (both routes listed). `trigger dev` registered `design-agent, generate-adr, generate-spec, review-architecture` (worker 20261120.1; stopped).
+  - Live test (2026-11-20; dev server and Trigger dev worker on the production database, one throwaway Clerk user, two Gemini calls as approved). The project was AWS + finance, with the Payments template (11 nodes, 9 edges, read back from autosave) and three chat messages: Postgres on RDS for the ledger over DynamoDB; fraud and notifications consuming "payment captured" asynchronously; card data only in the tokenization vault.
+    - `POST /api/ai/adr` → 202, token → 200; the run COMPLETED in 1 attempt (80 s), with metadata `{ status: "completed", specId }` and 5,641 characters of output.
+    - The list item has `kind: "ADR"` and the filename `payments-ledger-adr-2026-11-20-<id>.md`. The download → 200, `text/markdown`, with the same `-adr-` filename.
+    - The document, "# Payment System Architecture Decision Records", has 5 records: Postgres on RDS for the ledger, the PCI zone, async event-driven post-payment work, a synchronous fraud check, and the API gateway. Each has Status (Accepted), Context, Decision, Alternatives considered and Consequences.
+    - The canvas wires Payment Service straight to Fraud Check, so ADR-4 records a synchronous fraud check "inferred from the design" and lists Bob's async proposal from the chat as the alternative that "was omitted on the final canvas design". The canvas wins over the chat, as the prompt says.
+    - `POST /api/ai/spec` → 202; the run COMPLETED in 1 attempt (94 s). Its list item has `kind: "SPEC"` and a `-spec-` filename. The document has `## Components`, the `**Context:**` line and `## Compliance and Data Protection`, and no ADR headings. The list returned both items, each with `id, kind, filename, createdAt`.
+    - The project (with its spec and ADR files) and the Clerk user deleted; dev server and worker stopped.
+
+- Feature 59: Decision Record UI (2026-11-20).
+  - Billing deferred, as the spec's Billing Deferred section says: no 402 limit-reached message in `use-document-run`; a refused start shows the generic "Couldn't start …" notice.
+  - `hooks/use-document-run.ts` (new): the start → token → `useRealtimeRun` → reload flow, moved out of `specs-tab.tsx`.
+    - It takes `{ triggerRoute, tokenRoute, messages, onSuccess }` and returns `start(body)`, `isRunning` and `notice`, plus `activeRun` and `finishRun` for the `RunPoller` fallback.
+    - Behaviour kept: `skipColumns: ["payload", "output"]`, each finished run handled once (from realtime or the poller), `onSuccess` reloads the list, and the same notices for a failed start, a missing token, a failed run and a lost run.
+    - Generate Spec passes its previous messages word for word.
+    - The tab renders the `RunPoller`s itself: building the element inside the hook tripped the React Compiler lint (`react-hooks/refs`, since `finishRun` reads a ref).
+  - `specs-tab.tsx`:
+    - Under "Generate Spec" (unchanged), an `outline` "Generate decision records" button sends the same body (`roomId`, the last 200 chat messages, canvas nodes and edges) to `/api/ai/adr`.
+    - While either run is active, both buttons are disabled and the active one shows a spinner and "Generating spec…" or "Generating decision records…".
+    - The canvas guards ("The canvas is still loading…", "Add something to the canvas first.") apply to both. The notice shown is the guard's, or else the last-used button's run notice.
+    - The two buttons are stacked full-width rather than side by side: the sidebar is too narrow for both labels on one line.
+  - List:
+    - Each row shows a small "Spec" (violet) or "ADR" (cyan) badge before the date.
+    - Filter chips (All, Specs, Decision records; `aria-pressed`) sit above the list once it has loaded.
+    - Empty states match the filter: "No specs or decision records yet", "No specs yet", "No decision records yet."
+    - The row's download link is titled "Download decision records" for ADRs.
+  - Preview and download unchanged; the preview title is the filename, which includes `-adr-` for decision records.
+  - Not changed (scope limits): the ADR and spec tasks and routes, no ADR editing, no separate tab.
+  - TypeScript, ESLint and `npm run build` clean.
+  - Browser test (2026-11-20; local Playwright scripts with headless Chromium at 1440×900, dev server and Trigger dev worker on the production database, one throwaway Clerk user, AWS + finance project with the Payments template). Three Gemini calls were used: two approved, plus one more approved after a test-script bug (below).
+    - Empty project: the buttons read "Generate Spec" and "Generate decision records" (outline), with All pressed. The empty states were "No specs or decision records yet" (All), "No specs yet" (Specs) and "No decision records yet." (Decision records). "Generate decision records" on the empty canvas showed "Add something to the canvas first." and sent no request.
+    - Generate decision records: the button read "Generating decision records…" with a spinner, `aria-busy` true and disabled, and Generate Spec was disabled too. After 87 s (run 1 m 19.5 s) one row appeared, "payments-ledger-adr-2026-11-20-<id>.md · ADR · 20 Nov 2026, 22:25". Both buttons came back, with no notice.
+    - The ADR preview's title was the `-adr-` filename, with 5 `ADR-n:` records (ADR-1: isolating PCI DSS scope in the PCI zone).
+    - Test-script bug: the first run waited for a second row across every sidebar tab panel, so it moved on after 2 s and deleted the project while the spec run was still going. That run generated the spec (1 m 16.6 s) and then stopped with "AbortTaskRunError: The project was deleted before the document could be saved", so `saveProjectDocument` refused to save into a deleted project. The test was fixed to wait on the Specs list itself, and the spec half was re-run with one more approved call.
+    - Generate Spec: the button read "Generating spec…" with a spinner and `aria-busy`, and "Generate decision records" was disabled. After 88 s one row appeared, "payments-ledger-spec-2026-11-20-<id>.md · Spec · 20 Nov 2026, 22:39". The preview title was the `-spec-` filename, with "Payment Processing System Technical Specification" and its Components section.
+    - Filters: Specs showed the spec row; Decision records showed "No decision records yet."; All showed the row. In the ADR run, Decision records and All showed the ADR row and Specs was empty.
+    - No console errors. Screenshot: both buttons, the chips and the row with its violet Spec badge.
+    - Both test projects and the Clerk user deleted; dev server and worker stopped.
+
 ## In Progress
 
 - None.
 
 ## Next Up
-- Feature 58: Decision Record Generation (`context/feature-specs/58-decision-record-generation.md`)
+- Feature 60: Atlassian Connection (`context/feature-specs/60-atlassian-connection.md`)
 
 ## Roadmap
 
@@ -870,8 +928,8 @@ Billing and production hardening (specs 34–39) are deferred. The user decided 
 - 55 Version history API — Complete
 - 56 Version history UI — Complete
 - 57 Approval status — Complete
-- 58 Decision record generation — Not started
-- 59 Decision record UI — Not started
+- 58 Decision record generation — Complete (billing parts deferred)
+- 59 Decision record UI — Complete (billing parts deferred)
 - 60 Atlassian connection — Not started
 - 61 Confluence spec publish — Not started
 - 62 Jira issues from design — Not started

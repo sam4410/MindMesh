@@ -1,3 +1,9 @@
+// What a generated document is: a technical spec, or architecture decision records (spec 58).
+enum SpecKind {
+  SPEC
+  ADR
+}
+
 // Metadata for a generated spec; the Markdown itself lives in Vercel Blob at specs/{projectId}/{id}.md.
 model ProjectSpec {
   // uuid so the generate-spec task can choose the ID before uploading to the path that contains it.
@@ -5,6 +11,7 @@ model ProjectSpec {
   projectId String
   project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   filePath  String // Vercel Blob URL of the Markdown file
+  kind      SpecKind @default(SPEC)
   createdAt DateTime @default(now())
 
   @@index([projectId, createdAt])

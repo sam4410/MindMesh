@@ -1,8 +1,7 @@
 "use client";
 
-import { useRealtimeRun } from "@trigger.dev/react-hooks";
-import { Download, FileText, Loader2, Sparkles } from "lucide-react";
-import { createElement, useEffect, useRef, useState } from "react";
+import { Download, FileText, ListChecks, Loader2, Sparkles } from "lucide-react";
+import { createElement, useEffect, useState } from "react";
 import Markdown, { type Components, type ExtraProps } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -11,18 +10,66 @@ import { RunPoller } from "@/components/editor/run-poller";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { ChatEntry } from "@/hooks/use-ai-chat";
+import { useDocumentRun, type DocumentRunMessages } from "@/hooks/use-document-run";
 import type { CanvasSnapshot } from "@/lib/canvas-snapshot";
-import { postJson } from "@/lib/post-json";
+import type { SpecKind } from "@/lib/project-spec";
 import { cn } from "@/lib/utils";
+import type { generateAdr } from "@/trigger/generate-adr";
 import type { generateSpec } from "@/trigger/generate-spec";
 import { SPEC_MAX_CHAT_MESSAGES } from "@/types/tasks";
 
-// What GET /api/projects/[projectId]/specs returns per spec; the content comes from the download route.
+// What GET /api/projects/[projectId]/specs returns per document; the content comes from the download route.
 interface SpecSummary {
   id: string;
+  // A technical spec, or decision records (spec 58).
+  kind: SpecKind;
   filename: string;
   createdAt: string;
 }
+
+const SPEC_MESSAGES: DocumentRunMessages = {
+  startFailed: "Couldn't start spec generation. Try again.",
+  tokenFailed: "The spec is being generated, but its progress can't be shown. It will appear here when it's ready.",
+  runFailed: "Couldn't generate the spec. Try again.",
+  lostTrack: "Lost track of the spec run. The spec will appear here when it's ready.",
+};
+
+const ADR_MESSAGES: DocumentRunMessages = {
+  startFailed: "Couldn't start generating decision records. Try again.",
+  tokenFailed:
+    "The decision records are being generated, but their progress can't be shown. They will appear here when they're ready.",
+  runFailed: "Couldn't generate the decision records. Try again.",
+  lostTrack: "Lost track of the decision records run. They will appear here when they're ready.",
+};
+
+type KindFilter = "ALL" | SpecKind;
+
+// The filter chips above the list, and the empty state each one shows.
+const FILTERS: { value: KindFilter; label: string; emptyTitle: string; emptyText: string }[] = [
+  {
+    value: "ALL",
+    label: "All",
+    emptyTitle: "No specs or decision records yet",
+    emptyText: "Generated specs and decision records for this project will appear here.",
+  },
+  {
+    value: "SPEC",
+    label: "Specs",
+    emptyTitle: "No specs yet",
+    emptyText: "Generated specs for this project will appear here.",
+  },
+  {
+    value: "ADR",
+    label: "Decision records",
+    emptyTitle: "No decision records yet.",
+    emptyText: "Generated decision records for this project will appear here.",
+  },
+];
+
+const KIND_BADGES: Record<SpecKind, { label: string; className: string }> = {
+  SPEC: { label: "Spec", className: "border-ai/40 text-ai-text" },
+  ADR: { label: "ADR", className: "border-brand/40 text-brand" },
+};
 
 type Loaded<T> = { status: "loading" } | { status: "error" } | { status: "ready"; data: T };
 
@@ -42,80 +89,49 @@ interface SpecsTabProps {
   getCanvas: () => CanvasSnapshot | null;
 }
 
-// The run this browser started, and the token that lets it read only that run.
-interface ActiveRun {
-  runId: string;
-  publicToken: string;
-}
-
 export function SpecsTab({ projectId, isActive, chatMessages, getCanvas }: SpecsTabProps) {
   const [specs, setSpecs] = useState<Loaded<SpecSummary[]>>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
   const [selected, setSelected] = useState<SpecSummary | null>(null);
-  const [isStarting, setIsStarting] = useState(false);
-  const [activeRun, setActiveRun] = useState<ActiveRun | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-  // onComplete can fire again when the subscription stops; handle each run once.
-  const finishedRunId = useRef<string | null>(null);
-  const isGenerating = isStarting || activeRun !== null;
-
-  // Called by the realtime subscription and by the polling fallback; each run is handled once.
-  const finishRun = (run: { id: string; isCompleted: boolean; isSuccess: boolean } | undefined, err?: Error) => {
-    if (run && finishedRunId.current === run.id) return;
-    if (run) finishedRunId.current = run.id;
-    if (run?.isSuccess) {
-      setNotice(null);
-      setAttempt((n) => n + 1);
-    } else if (run?.isCompleted) {
-      setNotice("Couldn't generate the spec. Try again.");
-    } else if (err) {
-      setNotice("Lost track of the spec run. The spec will appear here when it's ready.");
-    } else {
-      return;
-    }
-    setActiveRun(null);
-  };
-
-  useRealtimeRun<typeof generateSpec>(activeRun?.runId, {
-    accessToken: activeRun?.publicToken,
-    enabled: activeRun !== null,
-    // The output is the whole spec; the list only needs to know the run finished.
-    skipColumns: ["payload", "output"],
-    onComplete: (run, err) => finishRun(run, err),
+  const [filter, setFilter] = useState<KindFilter>("ALL");
+  // The canvas guards' message; each run's own messages come from its hook.
+  const [guardNotice, setGuardNotice] = useState<string | null>(null);
+  // Which button was used last, so its run's notice is the one shown.
+  const [lastKind, setLastKind] = useState<SpecKind>("SPEC");
+  // A finished run reloads the list.
+  const reload = () => setAttempt((n) => n + 1);
+  const specRun = useDocumentRun({
+    triggerRoute: "/api/ai/spec",
+    tokenRoute: "/api/ai/spec/token",
+    messages: SPEC_MESSAGES,
+    onSuccess: reload,
   });
+  const adrRun = useDocumentRun({
+    triggerRoute: "/api/ai/adr",
+    tokenRoute: "/api/ai/adr/token",
+    messages: ADR_MESSAGES,
+    onSuccess: reload,
+  });
+  // One run at a time: both buttons wait while either is active.
+  const isGenerating = specRun.isRunning || adrRun.isRunning;
+  const notice = guardNotice ?? (lastKind === "SPEC" ? specRun.notice : adrRun.notice);
 
-  // Sends the live canvas and the chat to POST /api/ai/spec, then follows the run.
-  async function generate() {
+  // Sends the live canvas and the chat to POST /api/ai/spec or /api/ai/adr (the same body), then
+  // follows the run.
+  function generate(kind: SpecKind) {
     if (isGenerating) return;
+    setLastKind(kind);
     const canvas = getCanvas();
-    if (!canvas) return setNotice("The canvas is still loading. Try again in a moment.");
-    if (canvas.nodes.length === 0) return setNotice("Add something to the canvas first.");
+    if (!canvas) return setGuardNotice("The canvas is still loading. Try again in a moment.");
+    if (canvas.nodes.length === 0) return setGuardNotice("Add something to the canvas first.");
 
-    setNotice(null);
-    setIsStarting(true);
-    let runId: string;
-    try {
-      ({ runId } = await postJson<{ runId: string }>("/api/ai/spec", {
-        roomId: projectId,
-        chatHistory: chatMessages.slice(-SPEC_MAX_CHAT_MESSAGES),
-        nodes: canvas.nodes,
-        edges: canvas.edges,
-      }));
-    } catch (err) {
-      console.error(err);
-      setNotice("Couldn't start spec generation. Try again.");
-      setIsStarting(false);
-      return;
-    }
-    try {
-      const { token } = await postJson<{ token: string }>("/api/ai/spec/token", { runId });
-      setActiveRun({ runId, publicToken: token });
-    } catch (err) {
-      console.error(err);
-      setNotice("The spec is being generated, but its progress can't be shown. It will appear here when it's ready.");
-    } finally {
-      setIsStarting(false);
-    }
+    setGuardNotice(null);
+    void (kind === "SPEC" ? specRun : adrRun).start({
+      roomId: projectId,
+      chatHistory: chatMessages.slice(-SPEC_MAX_CHAT_MESSAGES),
+      nodes: canvas.nodes,
+      edges: canvas.edges,
+    });
   }
 
   useEffect(() => {
@@ -135,6 +151,10 @@ export function SpecsTab({ projectId, isActive, chatMessages, getCanvas }: Specs
     return () => controller.abort();
   }, [projectId, attempt, isActive]);
 
+  const activeFilter = FILTERS.find((option) => option.value === filter) ?? FILTERS[0];
+  const visible =
+    specs.status === "ready" ? specs.data.filter((spec) => filter === "ALL" || spec.kind === filter) : [];
+
   function retry() {
     setSpecs({ status: "loading" });
     setAttempt((n) => n + 1);
@@ -142,22 +162,40 @@ export function SpecsTab({ projectId, isActive, chatMessages, getCanvas }: Specs
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {activeRun && (
+      {/* Polling fallbacks for each document run; see components/editor/run-poller.tsx. */}
+      {specRun.activeRun && (
         <RunPoller<typeof generateSpec>
-          runId={activeRun.runId}
-          accessToken={activeRun.publicToken}
-          onComplete={finishRun}
+          runId={specRun.activeRun.runId}
+          accessToken={specRun.activeRun.publicToken}
+          onComplete={specRun.finishRun}
+        />
+      )}
+      {adrRun.activeRun && (
+        <RunPoller<typeof generateAdr>
+          runId={adrRun.activeRun.runId}
+          accessToken={adrRun.activeRun.publicToken}
+          onComplete={adrRun.finishRun}
         />
       )}
       <div className="flex flex-col gap-2 p-4 pb-3">
         <Button
-          onClick={generate}
+          onClick={() => generate("SPEC")}
           disabled={isGenerating}
-          aria-busy={isGenerating}
+          aria-busy={specRun.isRunning}
           className="w-full rounded-xl bg-ai text-white hover:bg-ai/90"
         >
-          {isGenerating ? <Loader2 className="animate-spin" /> : <Sparkles />}
-          {isGenerating ? "Generating spec…" : "Generate Spec"}
+          {specRun.isRunning ? <Loader2 className="animate-spin" /> : <Sparkles />}
+          {specRun.isRunning ? "Generating spec…" : "Generate Spec"}
+        </Button>
+        <Button
+          variant="outline"
+          onClick={() => generate("ADR")}
+          disabled={isGenerating}
+          aria-busy={adrRun.isRunning}
+          className="w-full rounded-xl"
+        >
+          {adrRun.isRunning ? <Loader2 className="animate-spin" /> : <ListChecks />}
+          {adrRun.isRunning ? "Generating decision records…" : "Generate decision records"}
         </Button>
         {notice && (
           <p role="status" className="text-xs text-copy-muted">
@@ -165,6 +203,27 @@ export function SpecsTab({ projectId, isActive, chatMessages, getCanvas }: Specs
           </p>
         )}
       </div>
+
+      {specs.status === "ready" && (
+        <div role="group" aria-label="Show" className="flex flex-wrap gap-1.5 px-4 pb-3">
+          {FILTERS.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              aria-pressed={filter === option.value}
+              onClick={() => setFilter(option.value)}
+              className={cn(
+                "rounded-full border px-2.5 py-0.5 text-xs transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ai/60",
+                filter === option.value
+                  ? "border-ai/50 bg-ai/15 text-copy-primary"
+                  : "border-surface-border text-copy-muted hover:bg-subtle hover:text-copy-secondary"
+              )}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       <ScrollArea className="min-h-0 flex-1">
         {specs.status === "loading" && (
@@ -181,18 +240,18 @@ export function SpecsTab({ projectId, isActive, chatMessages, getCanvas }: Specs
             </Button>
           </div>
         )}
-        {specs.status === "ready" && specs.data.length === 0 && (
+        {specs.status === "ready" && visible.length === 0 && (
           <div className="flex flex-col items-center gap-2 px-6 py-10 text-center">
             <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-subtle">
               <FileText className="h-6 w-6 text-ai-text" />
             </span>
-            <p className="text-sm font-medium text-copy-primary">No specs yet</p>
-            <p className="text-xs text-copy-muted">Generated specs for this project will appear here.</p>
+            <p className="text-sm font-medium text-copy-primary">{activeFilter.emptyTitle}</p>
+            <p className="text-xs text-copy-muted">{activeFilter.emptyText}</p>
           </div>
         )}
-        {specs.status === "ready" && specs.data.length > 0 && (
+        {specs.status === "ready" && visible.length > 0 && (
           <ul className="flex flex-col gap-2 px-4 pb-4">
-            {specs.data.map((spec) => (
+            {visible.map((spec) => (
               <li
                 key={spec.id}
                 className="flex items-center gap-1 rounded-2xl border border-surface-border bg-elevated pr-2 transition-colors hover:bg-subtle"
@@ -207,16 +266,26 @@ export function SpecsTab({ projectId, isActive, chatMessages, getCanvas }: Specs
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-medium text-copy-primary">{spec.filename}</span>
-                    <time dateTime={spec.createdAt} className="block text-xs text-copy-muted">
-                      {DATE_TIME_FORMAT.format(new Date(spec.createdAt))}
-                    </time>
+                    <span className="flex items-center gap-1.5">
+                      <span
+                        className={cn(
+                          "shrink-0 rounded-full border px-1.5 text-[10px] leading-4 font-medium",
+                          KIND_BADGES[spec.kind].className
+                        )}
+                      >
+                        {KIND_BADGES[spec.kind].label}
+                      </span>
+                      <time dateTime={spec.createdAt} className="truncate text-xs text-copy-muted">
+                        {DATE_TIME_FORMAT.format(new Date(spec.createdAt))}
+                      </time>
+                    </span>
                   </span>
                 </button>
                 <a
                   href={downloadUrl(projectId, spec.id)}
                   download={spec.filename}
                   aria-label={`Download ${spec.filename}`}
-                  title="Download spec"
+                  title={spec.kind === "ADR" ? "Download decision records" : "Download spec"}
                   className={buttonVariants({ variant: "ghost", size: "icon-sm" })}
                 >
                   <Download />

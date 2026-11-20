@@ -1,16 +1,11 @@
-import { randomUUID } from "node:crypto";
-
 import { google } from "@ai-sdk/google";
-import { AbortTaskRunError, logger, metadata, schemaTask } from "@trigger.dev/sdk";
-import { del, put } from "@vercel/blob";
+import { logger, metadata, schemaTask } from "@trigger.dev/sdk";
 import { generateText } from "ai";
 
-import { boundaryMembers } from "@/lib/boundaries";
-import { getCloudService, serviceFullName } from "@/lib/cloud-services";
 import { EMPTY_DESIGN_CONTEXT } from "@/lib/design-context";
 import { buildSpecContextSections } from "@/lib/design-context-prompts";
-import { prisma } from "@/lib/prisma";
-import { specBlobPath } from "@/lib/project-spec";
+import { describeCanvasAndChat, unwrapFence } from "@/lib/document-prompt";
+import { saveProjectDocument } from "@/lib/project-spec-store";
 import { generateSpecPayloadSchema, type GenerateSpecPayload, type TaskStatus } from "@/types/tasks";
 
 // Same Gemini model the design agent used before it moved to OpenAI.
@@ -43,7 +38,7 @@ export const generateSpec = schemaTask({
   id: "generate-spec",
   schema: generateSpecPayloadSchema,
   // The config's default retries apply (they're off in dev): a failed attempt leaves no record and
-  // no file behind (see saveSpec), so a retry can't produce duplicates.
+  // no file behind (see saveProjectDocument), so a retry can't produce duplicates.
   run: async (payload) => {
     // Read by the browser through a run-scoped token for realtime progress.
     const setStatus = (status: TaskStatus) => metadata.set("status", status);
@@ -59,7 +54,7 @@ export const generateSpec = schemaTask({
       const spec = unwrapFence(text);
       if (!spec) throw new Error("The model returned an empty spec");
 
-      const specId = await saveSpec(payload.projectId, spec);
+      const specId = await saveProjectDocument(payload.projectId, spec, "SPEC");
       // The output stays plain Markdown; the browser finds the saved spec's ID here.
       metadata.set("specId", specId);
       setStatus("completed");
@@ -74,83 +69,8 @@ export const generateSpec = schemaTask({
   },
 });
 
-// Same split as the canvas: Markdown in private Vercel Blob, its URL in the database.
-async function saveSpec(projectId: string, spec: string) {
-  // A project being deleted has already had its spec files removed, so don't add one behind it.
-  const project = await prisma.project.findFirst({
-    where: { id: projectId, deletionPending: false },
-    select: { id: true },
-  });
-  if (!project) throw new AbortTaskRunError("The project was deleted before the spec could be saved");
-
-  const specId = randomUUID();
-  const { url } = await put(specBlobPath(projectId, specId), spec, {
-    access: "private",
-    addRandomSuffix: false,
-    contentType: "text/markdown; charset=utf-8",
-  });
-  try {
-    await prisma.projectSpec.create({ data: { id: specId, projectId, filePath: url } });
-  } catch (err) {
-    // Without its record nothing can reach or clean up the file.
-    await del(url).catch((delErr) => logger.warn("Couldn't delete unsaved spec file", { url, error: String(delErr) }));
-    throw err;
-  }
-  return specId;
-}
-
-function describeContext({ nodes, edges, chatHistory, designContext }: GenerateSpecPayload) {
-  const names = new Map(
-    nodes.map((node) => [node.id, node.data.label.trim() || `unlabeled ${node.data.shape}`])
-  );
-  const nameOf = (id: string) => names.get(id) ?? id;
-
-  // A boundary is a group outline (spec 68), described by what it contains rather than as a component.
-  const components = nodes.filter((node) => node.data.shape !== "boundary");
-  const boundaries = nodes.filter((node) => node.data.shape === "boundary");
-
-  const nodeLines = components.map((node) => {
-    const service = getCloudService(node.data.service);
-    const managed = service ? `, managed service: ${serviceFullName(service)}` : "";
-    return `- ${nameOf(node.id)} (${node.data.shape}${managed})`;
-  });
-  const boundaryLines = boundaries.map((boundary) => {
-    const members = boundaryMembers(boundary, components).map((node) => nameOf(node.id));
-    return `- ${nameOf(boundary.id)}: ${members.length ? members.join(", ") : "(no components inside)"}`;
-  });
-  const edgeLines = edges.map((edge) => {
-    const label = edge.data?.label?.trim();
-    return `- ${nameOf(edge.source)} -> ${nameOf(edge.target)}${label ? `: ${label}` : ""}`;
-  });
-  const chatLines = chatHistory.map(
-    (message) => `${message.sender.name} (${message.role}): ${message.content}`
-  );
+function describeContext(payload: GenerateSpecPayload) {
   // Fields the payload omits count as not set; "" when no context is set.
-  const contextSections = buildSpecContextSections({ ...EMPTY_DESIGN_CONTEXT, ...designContext });
-
-  return [
-    `Canvas nodes (${components.length}):`,
-    ...nodeLines,
-    "",
-    ...(boundaryLines.length
-      ? [
-          `Boundaries (${boundaryLines.length}) — groups such as security, network, or compliance zones, not components; boundary: components inside:`,
-          ...boundaryLines,
-          "",
-        ]
-      : []),
-    `Canvas edges (${edges.length}), source -> target: interaction:`,
-    ...(edgeLines.length ? edgeLines : ["(none)"]),
-    "",
-    "Team chat, oldest first:",
-    ...(chatLines.length ? chatLines : ["(none)"]),
-    ...(contextSections ? ["", contextSections] : []),
-  ].join("\n");
-}
-
-// Models sometimes wrap the whole answer in a ```markdown fence despite the instructions.
-function unwrapFence(text: string) {
-  const trimmed = text.trim();
-  const match = /^```(?:markdown|md)?\s*\n([\s\S]*?)\n```$/i.exec(trimmed);
-  return (match ? match[1] : trimmed).trim();
+  const contextSections = buildSpecContextSections({ ...EMPTY_DESIGN_CONTEXT, ...payload.designContext });
+  return [...describeCanvasAndChat(payload), ...(contextSections ? ["", contextSections] : [])].join("\n");
 }
