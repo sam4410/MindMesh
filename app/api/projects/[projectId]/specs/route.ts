@@ -7,7 +7,8 @@ type Context = RouteContext<"/api/projects/[projectId]/specs">;
 // shortcut: newest 50 only, enough for the sidebar list; add paging if projects keep more specs.
 const MAX_SPECS = 50;
 
-// Lists a project's specs, newest first: metadata only, the content comes from the download route.
+// Lists a project's specs and ADR documents (`kind`), newest first: metadata only, the content
+// comes from the download route.
 export async function GET(_req: Request, ctx: Context) {
   const { projectId } = await ctx.params;
   const identity = await getCurrentIdentity();
@@ -20,13 +21,14 @@ export async function GET(_req: Request, ctx: Context) {
     where: { projectId },
     orderBy: { createdAt: "desc" },
     take: MAX_SPECS,
-    select: { id: true, createdAt: true },
+    select: { id: true, createdAt: true, kind: true },
   });
   return Response.json(
     {
       specs: specs.map((spec) => ({
         id: spec.id,
-        filename: specFilename(project.name, spec.createdAt, spec.id),
+        kind: spec.kind,
+        filename: specFilename(project.name, spec.createdAt, spec.id, spec.kind),
         createdAt: spec.createdAt.toISOString(),
       })),
     },
