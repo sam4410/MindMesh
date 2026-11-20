@@ -6,6 +6,7 @@ import {
   Download,
   FileCode,
   FileImage,
+  History,
   LayoutTemplate,
   Loader2,
   PanelLeftClose,
@@ -51,6 +52,7 @@ interface EditorNavbarProps {
   exportNotice?: ExportNotice | null;
   saveStatus?: CanvasSaveStatus;
   onSave?: () => void;
+  onOpenHistory?: () => void;
   designContext?: DesignContext;
   onEditDesignContext?: () => void;
 }
@@ -83,6 +85,7 @@ export function EditorNavbar({
   exportNotice,
   saveStatus = "idle",
   onSave,
+  onOpenHistory,
   designContext,
   onEditDesignContext,
 }: EditorNavbarProps) {
@@ -140,6 +143,10 @@ export function EditorNavbar({
             >
               {saveButton.icon}
               <span aria-live="polite">{saveButton.label}</span>
+            </Button>
+            <Button variant="outline" className="rounded-xl" onClick={onOpenHistory}>
+              <History className="h-4 w-4" />
+              History
             </Button>
             <Button variant="outline" className="rounded-xl" onClick={onOpenTemplates} data-tour="templates">
               <LayoutTemplate className="h-4 w-4" />
