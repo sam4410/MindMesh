@@ -1,6 +1,6 @@
 "use client";
 
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { AiSidebar } from "@/components/editor/ai-sidebar";
@@ -26,6 +26,7 @@ import { toDrawio } from "@/lib/exporters/drawio";
 import { toMermaid } from "@/lib/exporters/mermaid";
 import { toSlug } from "@/lib/slug";
 import { EMPTY_DESIGN_CONTEXT, type DesignContext } from "@/lib/design-context";
+import type { ApprovalState, ApprovalStatus } from "@/lib/project-approval";
 import { canManageProject } from "@/lib/project-roles";
 import type { ProjectSummary } from "@/lib/projects";
 import type { designAgent } from "@/trigger/design-agent";
@@ -50,6 +51,16 @@ export function EditorShell({ ownedProjects, sharedProjects, children }: EditorS
   const [savedContext, setSavedContext] = useState<{ projectId: string; value: DesignContext } | null>(
     null
   );
+  // An approval change made here, shown until the refreshed server props catch up (they win once
+  // their status differs from the one the change started from).
+  const [savedApproval, setSavedApproval] = useState<{
+    projectId: string;
+    from: ApprovalStatus;
+    value: ApprovalState;
+  } | null>(null);
+  const [isApprovalSaving, setIsApprovalSaving] = useState(false);
+  const [approvalError, setApprovalError] = useState<string | null>(null);
+  const router = useRouter();
   // Bumped on each open so the design-context dialog's draft starts from the saved value.
   const [contextOpenCount, setContextOpenCount] = useState(0);
   // Filled by the canvas once its room is connected; see hooks/use-canvas-import.ts.
@@ -122,6 +133,50 @@ export function EditorShell({ ownedProjects, sharedProjects, children }: EditorS
   });
   // Changes only when a send starts or a run ends, so the node toolbar can disable right away.
   const aiChatValue = useMemo(() => ({ ...aiChat, isDesignBusy: designRun.isBusy }), [aiChat, designRun.isBusy]);
+
+  const serverApproval: ApprovalState | undefined = currentProject && {
+    approvalStatus: currentProject.approvalStatus,
+    approvedByName: currentProject.approvedByName,
+    approvedAt: currentProject.approvedAt,
+  };
+  const currentApproval =
+    savedApproval && currentProject && savedApproval.projectId === currentProject.id &&
+    savedApproval.from === currentProject.approvalStatus
+      ? savedApproval.value
+      : serverApproval;
+
+  useEffect(() => {
+    if (!approvalError) return;
+    const timer = setTimeout(() => setApprovalError(null), 5000);
+    return () => clearTimeout(timer);
+  }, [approvalError]);
+
+  async function changeApproval(status: ApprovalStatus) {
+    if (!currentProject || !currentApproval || isApprovalSaving) return;
+    const projectId = currentProject.id;
+    setIsApprovalSaving(true);
+    setApprovalError(null);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/approval`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      const body = (await res.json().catch(() => null)) as (ApprovalState & { error?: string }) | null;
+      if (!res.ok || !body) throw new Error(body?.error ?? "Couldn't change the status. Try again.");
+      setSavedApproval({
+        projectId,
+        from: currentProject.approvalStatus,
+        value: { approvalStatus: body.approvalStatus, approvedByName: body.approvedByName, approvedAt: body.approvedAt },
+      });
+      // The sidebar dots come from the server props.
+      router.refresh();
+    } catch (err) {
+      setApprovalError((err as Error).message);
+    } finally {
+      setIsApprovalSaving(false);
+    }
+  }
 
   useEffect(() => {
     if (!exportNotice) return;
@@ -197,6 +252,11 @@ export function EditorShell({ ownedProjects, sharedProjects, children }: EditorS
             setIsHistoryOpen(true);
           }}
           designContext={currentProject?.designContext}
+          approval={currentApproval}
+          approvalRole={currentProject?.role}
+          onChangeApproval={(status) => void changeApproval(status)}
+          isApprovalSaving={isApprovalSaving}
+          approvalError={approvalError}
           onEditDesignContext={() => {
             setContextOpenCount((count) => count + 1);
             setIsContextOpen(true);

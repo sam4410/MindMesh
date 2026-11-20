@@ -5,6 +5,7 @@ import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import type { ApprovalStatus } from "@/lib/project-approval";
 import { canManageProject } from "@/lib/project-roles";
 import type { ProjectSummary } from "@/lib/projects";
 import { cn } from "@/lib/utils";
@@ -107,6 +108,13 @@ export function ProjectSidebar({
   );
 }
 
+// The project's approval status (spec 57): muted for draft, orange for in review, green for approved.
+const STATUS_DOTS: Record<ApprovalStatus, { className: string; label: string | null }> = {
+  DRAFT: { className: "bg-copy-faint", label: null },
+  IN_REVIEW: { className: "bg-warning", label: "In review" },
+  APPROVED: { className: "bg-success", label: "Approved" },
+};
+
 interface ProjectListProps {
   projects: ProjectSummary[];
   activeProjectId?: string;
@@ -119,6 +127,7 @@ function ProjectList({ projects, activeProjectId, onRename, onDelete }: ProjectL
     <ul className="space-y-1 py-2">
       {projects.map((project) => {
         const isActive = project.id === activeProjectId;
+        const statusDot = STATUS_DOTS[project.approvalStatus];
         return (
           <li
             key={project.id}
@@ -139,12 +148,11 @@ function ProjectList({ projects, activeProjectId, onRename, onDelete }: ProjectL
                 aria-current={isActive ? "page" : undefined}
                 className="flex min-w-0 flex-1 items-center gap-2 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
+                {/* The active project is marked by the row itself, so the dot is free for the status. */}
                 <span
                   aria-hidden
-                  className={cn(
-                    "h-1.5 w-1.5 shrink-0 rounded-full",
-                    isActive ? "bg-brand" : "bg-copy-faint"
-                  )}
+                  title={statusDot.label ?? "Draft"}
+                  className={cn("h-1.5 w-1.5 shrink-0 rounded-full", statusDot.className)}
                 />
                 <span
                   className={cn(
@@ -154,6 +162,7 @@ function ProjectList({ projects, activeProjectId, onRename, onDelete }: ProjectL
                 >
                   {project.name}
                 </span>
+                {statusDot.label && <span className="sr-only">({statusDot.label})</span>}
               </Link>
             )}
             {onRename && onDelete && canManageProject(project.role) && (

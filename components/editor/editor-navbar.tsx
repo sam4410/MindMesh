@@ -27,6 +27,9 @@ import {
 import type { CanvasSaveStatus } from "@/hooks/use-canvas-autosave";
 import { designContextLabels, type DesignContext } from "@/lib/design-context";
 import type { ImageFormat } from "@/lib/export-image";
+import { allowedApprovalChanges, type ApprovalState, type ApprovalStatus } from "@/lib/project-approval";
+import type { ProjectRole } from "@/lib/project-roles";
+import { cn } from "@/lib/utils";
 
 // Export menu items: images (spec 50), then Mermaid and draw.io text (spec 51).
 export type ExportAction = ImageFormat | "mermaid" | "drawio" | "copy-mermaid";
@@ -55,6 +58,37 @@ interface EditorNavbarProps {
   onOpenHistory?: () => void;
   designContext?: DesignContext;
   onEditDesignContext?: () => void;
+  // Approval status (spec 57): the current state, the user's role (which picks the changes on
+  // offer; the route enforces it), and errors.
+  approval?: ApprovalState;
+  approvalRole?: ProjectRole;
+  onChangeApproval?: (status: ApprovalStatus) => void;
+  isApprovalSaving?: boolean;
+  approvalError?: string | null;
+}
+
+const APPROVAL_STYLES: Record<ApprovalStatus, { label: string; className: string; dot: string }> = {
+  DRAFT: { label: "Draft", className: "border-surface-border text-copy-muted", dot: "bg-copy-faint" },
+  IN_REVIEW: { label: "In review", className: "border-warning/40 bg-warning/10 text-warning", dot: "bg-warning" },
+  APPROVED: { label: "Approved", className: "border-success/40 bg-success/10 text-success", dot: "bg-success" },
+};
+
+// Menu wording for each allowed change, keyed "FROM>TO".
+const APPROVAL_CHANGE_LABELS: Record<string, string> = {
+  "DRAFT>IN_REVIEW": "Send for review",
+  "IN_REVIEW>DRAFT": "Back to draft",
+  "IN_REVIEW>APPROVED": "Approve",
+  "APPROVED>DRAFT": "Reopen as draft",
+};
+
+const APPROVAL_DATE_FORMAT = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" });
+
+// "Draft", "In review", or "Approved by {name} · {date}".
+function approvalLabel({ approvalStatus, approvedByName, approvedAt }: ApprovalState) {
+  if (approvalStatus !== "APPROVED") return APPROVAL_STYLES[approvalStatus].label;
+  const parts = [`Approved by ${approvedByName ?? "someone"}`];
+  if (approvedAt) parts.push(APPROVAL_DATE_FORMAT.format(new Date(approvedAt)));
+  return parts.join(" · ");
 }
 
 const SAVE_BUTTON = {
@@ -88,6 +122,11 @@ export function EditorNavbar({
   onOpenHistory,
   designContext,
   onEditDesignContext,
+  approval,
+  approvalRole,
+  onChangeApproval,
+  isApprovalSaving = false,
+  approvalError,
 }: EditorNavbarProps) {
   const ToggleIcon = isSidebarOpen ? PanelLeftClose : PanelLeftOpen;
   const contextLabels = designContext ? designContextLabels(designContext) : [];
@@ -107,7 +146,18 @@ export function EditorNavbar({
       <div className="min-w-0 flex-1">
         {projectName && (
           <>
-            <h1 className="truncate text-sm font-medium text-copy-primary">{projectName}</h1>
+            <div className="flex min-w-0 items-center gap-2">
+              <h1 className="truncate text-sm font-medium text-copy-primary">{projectName}</h1>
+              {approval && approvalRole && (
+                <ApprovalPill
+                  approval={approval}
+                  changes={allowedApprovalChanges(approval.approvalStatus, approvalRole)}
+                  onChange={onChangeApproval}
+                  isSaving={isApprovalSaving}
+                  error={approvalError}
+                />
+              )}
+            </div>
             {/* The design context as chips; opens the edit dialog. */}
             <button
               type="button"
@@ -219,5 +269,70 @@ export function EditorNavbar({
         {!projectName && <UserButton />}
       </div>
     </header>
+  );
+}
+
+interface ApprovalPillProps {
+  approval: ApprovalState;
+  changes: ApprovalStatus[];
+  onChange?: (status: ApprovalStatus) => void;
+  isSaving: boolean;
+  error?: string | null;
+}
+
+// The project's approval status; opens a menu with the changes this user's role allows.
+function ApprovalPill({ approval, changes, onChange, isSaving, error }: ApprovalPillProps) {
+  const style = APPROVAL_STYLES[approval.approvalStatus];
+  const label = approvalLabel(approval);
+  const pillClass = cn(
+    "flex max-w-64 shrink-0 items-center gap-1.5 rounded-full border px-2 py-px text-[11px] leading-4 outline-none",
+    style.className
+  );
+  const content = (
+    <>
+      {isSaving ? (
+        <Loader2 aria-hidden className="h-3 w-3 shrink-0 animate-spin" />
+      ) : (
+        <span aria-hidden className={cn("h-1.5 w-1.5 shrink-0 rounded-full", style.dot)} />
+      )}
+      <span className="truncate">{label}</span>
+    </>
+  );
+
+  return (
+    <div className="relative">
+      {changes.length === 0 ? (
+        // Nothing this role can change (an approved project for a member or collaborator).
+        <span className={pillClass} title="Only the owner or an admin can change this">
+          {content}
+        </span>
+      ) : (
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            disabled={isSaving}
+            aria-label={`Approval status: ${label}. Change`}
+            render={<button type="button" className={cn(pillClass, "focus-visible:ring-2 focus-visible:ring-ring")} />}
+          >
+            {content}
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-auto min-w-40">
+            {changes.map((to) => (
+              <DropdownMenuItem key={to} onClick={() => onChange?.(to)}>
+                <span aria-hidden className={cn("h-1.5 w-1.5 rounded-full", APPROVAL_STYLES[to].dot)} />
+                {APPROVAL_CHANGE_LABELS[`${approval.approvalStatus}>${to}`] ?? APPROVAL_STYLES[to].label}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
+      {error && (
+        <p
+          role="alert"
+          className="absolute top-full left-0 z-50 mt-2 rounded-md border border-surface-border bg-surface px-2 py-1 text-xs whitespace-nowrap text-error shadow-lg"
+        >
+          {error}
+        </p>
+      )}
+    </div>
   );
 }

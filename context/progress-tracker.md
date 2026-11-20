@@ -6,7 +6,7 @@ Update this file whenever the current phase, active feature, or implementation s
 - Commercial roadmap, Phase 2 (Segmentation and ease of use). Features 40–43 and 68–71 complete; 34–39 deferred.
 
 ## Current Goal
-- Feature 57: Approval Status
+- Feature 58: Decision Record Generation
 
 ## Completed
 
@@ -783,12 +783,43 @@ Update this file whenever the current phase, active feature, or implementation s
     - Both test projects (versions and Blobs removed with them) and both Clerk users deleted; dev server stopped.
   - Follow-up (2026-11-20, at the user's request): while a version is being deleted, its row dims and shows a spinner with "Deleting…" (`role="status"`, `aria-busy` on the row) in place of Restore and Delete, until the request finishes. TypeScript, ESLint and `npm run build` clean. Not browser-tested: creating the Clerk test user was blocked by the permission check.
 
+- Feature 57: Approval Status (2026-11-20).
+  - Schema (`prisma/models/project.prisma`): enum `ApprovalStatus { DRAFT IN_REVIEW APPROVED }`, `Project.approvalStatus` (default `DRAFT`), `approvedById String?`, `approvedByName String?`, `approvedAt DateTime?`. The existing `status` (`DRAFT`/`ARCHIVED`) is unchanged.
+    - Migration `20261120141410_add_project_approval` adds the enum and four columns; existing projects become Draft. Applied to local `ghost_ai` with `prisma migrate dev`, and to production Prisma Postgres with `prisma migrate deploy` on 2026-11-20 (the first attempt failed with P1001 "can't reach database server" and applied nothing; the retry applied it; status: up to date). Every editor page reads these columns, so production had to be migrated before this code runs against it.
+  - `lib/project-approval.ts` (new, client-safe): the statuses, the transition table (anyone with access: Draft ⇄ In review; owner or admin only: In review → Approved and Approved → Draft), `checkApprovalChange(from, to, role)` (`allowed` / `invalid` / `forbidden`), and `allowedApprovalChanges(from, role)` for the menu. Roles come from `getProjectRole` (spec 33), and "owner or admin" is `canManageProject`.
+  - `PATCH /api/projects/[projectId]/approval` with `{ status }`:
+    - checks: 401 without a session; 403/404 from `projectAccessError` without access; 400 for an unknown status
+    - 409 for any change not in the table (including to the same status); 403 "Only the owner or an admin can do this" for a role that isn't allowed
+    - approving sets `approvedById`, `approvedByName` (the session's display name) and `approvedAt`; leaving Approved clears them
+    - the update is conditional on the status it read, so a change made meanwhile gets 409 "The approval status just changed. Reload and try again."
+    - returns `{ approvalStatus, approvedById, approvedByName, approvedAt }`
+  - `ProjectSummary` (`lib/projects.ts`) carries `approvalStatus`, `approvedByName` and `approvedAt` (ISO). This is the data the editor layout loads for the sidebar and the workspace navbar; the workspace page itself only renders the canvas, so it needed no change.
+  - Navbar: a pill next to the project name showing "Draft" (muted), "In review" (orange) or "Approved by {name} · {date}" (green), with a matching dot.
+    - Clicking it opens a menu with only the changes the user's role allows: "Send for review", "Back to draft", "Approve", "Reopen as draft". With none allowed (an approved project for a member or collaborator), the pill is plain text titled "Only the owner or an admin can change this".
+    - While saving, the dot turns into a spinner; an error shows under the pill for 5 s.
+    - EditorShell keeps the new state until `router.refresh()` brings matching server props.
+    - Calling `allowedApprovalChanges` inline in EditorShell's JSX made the React Compiler skip the shell (`preserve-manual-memoization` on the existing `aiChatValue` memo), so the navbar computes it from `approvalRole`.
+  - Project sidebar: each project's dot now shows its status (muted for draft, orange for in review, green for approved), with screen-reader text for the last two. The active project is still marked by its row highlight; the dot used to turn cyan for it.
+  - Not added (scope limits): resetting approval when the canvas changes, multi-person approval or approver assignment, notifications. Other collaborators see a change after their next refresh, not live.
+  - TypeScript, ESLint and `npm run build` clean (route listed).
+  - Test (2026-11-20; local Playwright scripts with headless Chromium at 1440×900, dev server on the production database, no AI calls). Alice Owner owned the project and Bob Builder was a collaborator (two throwaway Clerk users). Organization member and admin roles weren't covered; they go through the same `canManageProject` check as owner and collaborator. The first two runs hit Clerk's intermittent sign-in timeout before anything was created, so the script now retries sign-in once.
+    - API: an unknown status → 400. Bob: Draft → Approved → 409; Draft → Draft → 409; → In review → 200; In review again → 409; Approve → 403; → Draft → 200. Alice: → In review → 200; Approve → 200 with `approvedByName` "Alice Owner" and `approvedAt` set. Bob: reopen as draft → 403; Approved → In review → 409. Alice: reopen → 200 with the approval fields cleared. Signed out → 401.
+    - Alice's pill and menu: "Draft" offers ["Send for review"]; "In review" offers ["Back to draft", "Approve"]; "Approved by Alice Owner · 20 Nov 2026" offers ["Reopen as draft"]. Her sidebar dot turned green, with screen-reader text "(Approved)".
+    - Bob saw the approved project as a plain pill, "Approved by Alice Owner · 20 Nov 2026" with no menu, and a green dot in his Shared tab.
+    - After Alice reopened it, Bob's pill was "Draft" with ["Send for review"]. After he sent it for review, Alice's sidebar dot was orange ("(In review)") and her pill read "In review".
+    - In that run Bob's pill still read "Draft" 2.5 s after his click (its menu already offered "Back to draft"), so I reproduced it on its own:
+      - Once the PATCH took 5.3 s (dev log), and the pill changed only when it returned.
+      - On the next run it took 989 ms, and the pill read "In review" within about 1 s, followed by the `router.refresh()` request.
+      - Approval PATCHes took 0.6–1.8 s, with spikes of 5.2 and 5.3 s, in line with the production database connection trouble that day (the P1001 above). The pill shows a spinner while it waits.
+    - Console errors: none for Alice; for Bob, only the seven expected 400/403/409 responses from the API checks.
+    - The test projects and both Clerk users deleted; dev server stopped.
+
 ## In Progress
 
 - None.
 
 ## Next Up
-- Feature 57: Approval Status (`context/feature-specs/57-approval-status.md`)
+- Feature 58: Decision Record Generation (`context/feature-specs/58-decision-record-generation.md`)
 
 ## Roadmap
 
@@ -838,7 +869,7 @@ Billing and production hardening (specs 34–39) are deferred. The user decided 
 - 54 Node comments — Complete
 - 55 Version history API — Complete
 - 56 Version history UI — Complete
-- 57 Approval status — Not started
+- 57 Approval status — Complete
 - 58 Decision record generation — Not started
 - 59 Decision record UI — Not started
 - 60 Atlassian connection — Not started
