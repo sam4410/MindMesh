@@ -6,7 +6,7 @@ Update this file whenever the current phase, active feature, or implementation s
 - Commercial roadmap, Phase 2 (Segmentation and ease of use). Features 40–43 and 68–71 complete; 34–39 deferred.
 
 ## Current Goal
-- Feature 59: Decision Record UI
+- Feature 60: Atlassian Connection
 
 ## Completed
 
@@ -842,12 +842,42 @@ Update this file whenever the current phase, active feature, or implementation s
     - `POST /api/ai/spec` → 202; the run COMPLETED in 1 attempt (94 s). Its list item has `kind: "SPEC"` and a `-spec-` filename. The document has `## Components`, the `**Context:**` line and `## Compliance and Data Protection`, and no ADR headings. The list returned both items, each with `id, kind, filename, createdAt`.
     - The project (with its spec and ADR files) and the Clerk user deleted; dev server and worker stopped.
 
+- Feature 59: Decision Record UI (2026-11-20).
+  - Billing deferred, as the spec's Billing Deferred section says: no 402 limit-reached message in `use-document-run`; a refused start shows the generic "Couldn't start …" notice.
+  - `hooks/use-document-run.ts` (new): the start → token → `useRealtimeRun` → reload flow, moved out of `specs-tab.tsx`.
+    - It takes `{ triggerRoute, tokenRoute, messages, onSuccess }` and returns `start(body)`, `isRunning` and `notice`, plus `activeRun` and `finishRun` for the `RunPoller` fallback.
+    - Behaviour kept: `skipColumns: ["payload", "output"]`, each finished run handled once (from realtime or the poller), `onSuccess` reloads the list, and the same notices for a failed start, a missing token, a failed run and a lost run.
+    - Generate Spec passes its previous messages word for word.
+    - The tab renders the `RunPoller`s itself: building the element inside the hook tripped the React Compiler lint (`react-hooks/refs`, since `finishRun` reads a ref).
+  - `specs-tab.tsx`:
+    - Under "Generate Spec" (unchanged), an `outline` "Generate decision records" button sends the same body (`roomId`, the last 200 chat messages, canvas nodes and edges) to `/api/ai/adr`.
+    - While either run is active, both buttons are disabled and the active one shows a spinner and "Generating spec…" or "Generating decision records…".
+    - The canvas guards ("The canvas is still loading…", "Add something to the canvas first.") apply to both. The notice shown is the guard's, or else the last-used button's run notice.
+    - The two buttons are stacked full-width rather than side by side: the sidebar is too narrow for both labels on one line.
+  - List:
+    - Each row shows a small "Spec" (violet) or "ADR" (cyan) badge before the date.
+    - Filter chips (All, Specs, Decision records; `aria-pressed`) sit above the list once it has loaded.
+    - Empty states match the filter: "No specs or decision records yet", "No specs yet", "No decision records yet."
+    - The row's download link is titled "Download decision records" for ADRs.
+  - Preview and download unchanged; the preview title is the filename, which includes `-adr-` for decision records.
+  - Not changed (scope limits): the ADR and spec tasks and routes, no ADR editing, no separate tab.
+  - TypeScript, ESLint and `npm run build` clean.
+  - Browser test (2026-11-20; local Playwright scripts with headless Chromium at 1440×900, dev server and Trigger dev worker on the production database, one throwaway Clerk user, AWS + finance project with the Payments template). Three Gemini calls were used: two approved, plus one more approved after a test-script bug (below).
+    - Empty project: the buttons read "Generate Spec" and "Generate decision records" (outline), with All pressed. The empty states were "No specs or decision records yet" (All), "No specs yet" (Specs) and "No decision records yet." (Decision records). "Generate decision records" on the empty canvas showed "Add something to the canvas first." and sent no request.
+    - Generate decision records: the button read "Generating decision records…" with a spinner, `aria-busy` true and disabled, and Generate Spec was disabled too. After 87 s (run 1 m 19.5 s) one row appeared, "payments-ledger-adr-2026-11-20-<id>.md · ADR · 20 Nov 2026, 22:25". Both buttons came back, with no notice.
+    - The ADR preview's title was the `-adr-` filename, with 5 `ADR-n:` records (ADR-1: isolating PCI DSS scope in the PCI zone).
+    - Test-script bug: the first run waited for a second row across every sidebar tab panel, so it moved on after 2 s and deleted the project while the spec run was still going. That run generated the spec (1 m 16.6 s) and then stopped with "AbortTaskRunError: The project was deleted before the document could be saved", so `saveProjectDocument` refused to save into a deleted project. The test was fixed to wait on the Specs list itself, and the spec half was re-run with one more approved call.
+    - Generate Spec: the button read "Generating spec…" with a spinner and `aria-busy`, and "Generate decision records" was disabled. After 88 s one row appeared, "payments-ledger-spec-2026-11-20-<id>.md · Spec · 20 Nov 2026, 22:39". The preview title was the `-spec-` filename, with "Payment Processing System Technical Specification" and its Components section.
+    - Filters: Specs showed the spec row; Decision records showed "No decision records yet."; All showed the row. In the ADR run, Decision records and All showed the ADR row and Specs was empty.
+    - No console errors. Screenshot: both buttons, the chips and the row with its violet Spec badge.
+    - Both test projects and the Clerk user deleted; dev server and worker stopped.
+
 ## In Progress
 
 - None.
 
 ## Next Up
-- Feature 59: Decision Record UI (`context/feature-specs/59-decision-record-ui.md`)
+- Feature 60: Atlassian Connection (`context/feature-specs/60-atlassian-connection.md`)
 
 ## Roadmap
 
@@ -899,7 +929,7 @@ Billing and production hardening (specs 34–39) are deferred. The user decided 
 - 56 Version history UI — Complete
 - 57 Approval status — Complete
 - 58 Decision record generation — Complete (billing parts deferred)
-- 59 Decision record UI — Not started
+- 59 Decision record UI — Complete (billing parts deferred)
 - 60 Atlassian connection — Not started
 - 61 Confluence spec publish — Not started
 - 62 Jira issues from design — Not started
