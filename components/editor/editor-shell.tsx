@@ -11,6 +11,7 @@ import { ProjectSidebar } from "@/components/editor/project-sidebar";
 import { RunPoller } from "@/components/editor/run-poller";
 import { ShareDialog } from "@/components/editor/share-dialog";
 import { StarterTemplatesModal } from "@/components/editor/starter-templates-modal";
+import { VersionHistoryDialog } from "@/components/editor/version-history-dialog";
 import { AiChatContext, type AiPromptDraft, type ChatEntry, type SendChatMessage } from "@/hooks/use-ai-chat";
 import { AiActivityContext, NO_AI_ACTIVITY, type AiActivity } from "@/hooks/use-ai-status";
 import { CanvasSaveContext, type CanvasSaveStatus } from "@/hooks/use-canvas-autosave";
@@ -40,6 +41,9 @@ export function EditorShell({ ownedProjects, sharedProjects, children }: EditorS
   const [isAiSidebarOpen, setIsAiSidebarOpen] = useState(false);
   const [isShareOpen, setIsShareOpen] = useState(false);
   const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  // Bumped on each open so the history dialog reloads the list and gets a fresh default name.
+  const [historyOpenCount, setHistoryOpenCount] = useState(0);
   // Bumped on each open so the template filters start from the project's context again.
   const [templatesOpenCount, setTemplatesOpenCount] = useState(0);
   const [isContextOpen, setIsContextOpen] = useState(false);
@@ -62,8 +66,16 @@ export function EditorShell({ ownedProjects, sharedProjects, children }: EditorS
   const canvasRef = useRef<CanvasSnapshot | null>(null);
   // Whether the loaded canvas has any nodes; picks the AI sidebar's prompt suggestions.
   const [canvasHasNodes, setCanvasHasNodes] = useState(false);
+  // Whether the canvas has finished loading (empty or not); versions can't be saved before.
+  const [canvasLoaded, setCanvasLoaded] = useState(false);
   const canvasSave = useMemo(
-    () => ({ setStatus: setSaveStatus, saveRef: saveCanvasRef, canvasRef, setHasNodes: setCanvasHasNodes }),
+    () => ({
+      setStatus: setSaveStatus,
+      saveRef: saveCanvasRef,
+      canvasRef,
+      setHasNodes: setCanvasHasNodes,
+      setIsLoaded: setCanvasLoaded,
+    }),
     []
   );
   // Filled by the canvas from the room's status feed and presence; see hooks/use-ai-status.ts.
@@ -180,6 +192,10 @@ export function EditorShell({ ownedProjects, sharedProjects, children }: EditorS
           exportNotice={exportNotice}
           saveStatus={saveStatus}
           onSave={() => saveCanvasRef.current?.()}
+          onOpenHistory={() => {
+            setHistoryOpenCount((count) => count + 1);
+            setIsHistoryOpen(true);
+          }}
           designContext={currentProject?.designContext}
           onEditDesignContext={() => {
             setContextOpenCount((count) => count + 1);
@@ -255,6 +271,24 @@ export function EditorShell({ ownedProjects, sharedProjects, children }: EditorS
             const importTemplate = importTemplateRef.current;
             if (!importTemplate) return false;
             importTemplate(template);
+            return true;
+          }}
+        />
+      )}
+      {currentProject && (
+        <VersionHistoryDialog
+          key={`history-${currentProject.id}-${historyOpenCount}`}
+          projectId={currentProject.id}
+          // UI hint only; the delete route enforces the role.
+          canManage={canManageProject(currentProject.role)}
+          open={isHistoryOpen}
+          onOpenChange={setIsHistoryOpen}
+          isCanvasLoaded={canvasLoaded}
+          getCanvas={() => canvasRef.current}
+          onRestore={(canvas) => {
+            const importCanvas = importTemplateRef.current;
+            if (!importCanvas) return false;
+            importCanvas(canvas);
             return true;
           }}
         />

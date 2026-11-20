@@ -24,12 +24,20 @@ export type CanvasLoadState = "loading" | "ready" | "failed";
 // canvasRef hands the live canvas to EditorShell too (the AI sidebar's spec generation reads it);
 // it's null until the canvas has loaded. setHasNodes tells EditorShell when the loaded canvas gains
 // its first node or loses its last, so the AI sidebar re-renders its prompt suggestions.
+// setIsLoaded does the same when the canvas finishes loading (the version history dialog waits for it).
 export const CanvasSaveContext = createContext<{
   setStatus: (status: CanvasSaveStatus) => void;
   saveRef: RefObject<(() => void) | null>;
   canvasRef: RefObject<CanvasSnapshot | null>;
   setHasNodes: (hasNodes: boolean) => void;
-}>({ setStatus: () => {}, saveRef: { current: null }, canvasRef: { current: null }, setHasNodes: () => {} });
+  setIsLoaded: (isLoaded: boolean) => void;
+}>({
+  setStatus: () => {},
+  saveRef: { current: null },
+  canvasRef: { current: null },
+  setHasNodes: () => {},
+  setIsLoaded: () => {},
+});
 
 interface UseCanvasAutosaveOptions {
   projectId: string;
@@ -50,7 +58,7 @@ export function useCanvasAutosave({
   unsavedOnLoad = false,
   onRetryLoad,
 }: UseCanvasAutosaveOptions) {
-  const { setStatus, saveRef, canvasRef, setHasNodes } = useContext(CanvasSaveContext);
+  const { setStatus, saveRef, canvasRef, setHasNodes, setIsLoaded } = useContext(CanvasSaveContext);
   const url = `/api/projects/${projectId}/canvas`;
   const serialized = useMemo(() => serializeCanvas(nodes, edges), [nodes, edges]);
   const latest = useRef(serialized);
@@ -131,6 +139,11 @@ export function useCanvasAutosave({
     setHasNodes(hasNodes);
   }, [hasNodes, setHasNodes]);
   useEffect(() => () => setHasNodes(false), [setHasNodes]);
+  const isLoaded = loadState === "ready";
+  useEffect(() => {
+    setIsLoaded(isLoaded);
+  }, [isLoaded, setIsLoaded]);
+  useEffect(() => () => setIsLoaded(false), [setIsLoaded]);
 
   // The navbar's Save button saves right away, or retries a failed load first.
   useEffect(() => {

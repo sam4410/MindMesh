@@ -54,7 +54,6 @@ import { OnboardingTour } from "@/components/editor/onboarding-tour";
 import { PresenceAvatars } from "@/components/editor/presence-avatars";
 import { ShapePanel } from "@/components/editor/shape-panel";
 import { Button } from "@/components/ui/button";
-import type { CanvasTemplate } from "@/components/editor/starter-templates";
 import { useSyncAiChat } from "@/hooks/use-ai-chat";
 import { AI_AGENT } from "@/lib/ai-status";
 import { useSyncAiActivity } from "@/hooks/use-ai-status";
@@ -261,7 +260,7 @@ function Canvas() {
   // handlers. Clearing uses onDelete because Liveblocks ignores "remove" changes in
   // onNodesChange/onEdgesChange. One batch means collaborators see a single swap (never an empty
   // canvas) and one undo restores the previous canvas.
-  function importTemplate(template: CanvasTemplate) {
+  function importTemplate(template: CanvasSnapshot) {
     room.batch(() => {
       onDelete({ nodes, edges });
       onNodesChange(template.nodes.map((item) => ({ type: "add", item })));

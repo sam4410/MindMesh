@@ -2,9 +2,10 @@
 
 import { createContext, useContext, useEffect, type RefObject } from "react";
 
-import type { CanvasTemplate } from "@/components/editor/starter-templates";
+import type { CanvasSnapshot } from "@/lib/canvas-snapshot";
 
-export type ImportTemplate = (template: CanvasTemplate) => void;
+// Replaces the canvas with a template's nodes and edges, or a restored version's (spec 56).
+export type ImportTemplate = (canvas: CanvasSnapshot) => void;
 
 // The navbar lives in EditorShell while the canvas (and its Liveblocks room) sits deep inside the
 // page, so the canvas registers its import handler in a ref that EditorShell provides.

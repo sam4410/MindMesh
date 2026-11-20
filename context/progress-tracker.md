@@ -6,7 +6,7 @@ Update this file whenever the current phase, active feature, or implementation s
 - Commercial roadmap, Phase 2 (Segmentation and ease of use). Features 40–43 and 68–71 complete; 34–39 deferred.
 
 ## Current Goal
-- Feature 56: Version History UI
+- Feature 57: Approval Status
 
 ## Completed
 
@@ -755,12 +755,40 @@ Update this file whenever the current phase, active feature, or implementation s
     - Deleting project P → 204: 0 Blobs left under `versions/P/`, and its versions list → 404.
     - Projects P and Q and both Clerk users deleted; dev server stopped.
 
+- Feature 56: Version History UI (2026-11-20).
+  - `editor-navbar.tsx`: a "History" button (lucide `History` clock icon) right after Save. It opens `components/editor/version-history-dialog.tsx` (new, on `EditorDialog`), which is remounted on each open (keyed by an open count), so the list reloads and the default name is fresh.
+  - Save: a name input (default "Version {date time}" in the viewer's locale, max 80) and "Save version". It posts `{ name, nodes, edges }` from `canvasRef` (`getCanvas`, as the Specs tab does) to `POST …/versions`.
+    - Disabled until the canvas has loaded. For this, `CanvasSaveContext` gained `setIsLoaded`, which the autosave hook reports and EditorShell keeps as `canvasLoaded`; an empty but loaded canvas can be saved.
+    - On success the version goes to the top of the list with "Saved "{name}"." A 409 shows the API's "Version limit reached. Delete an old version first."; any other failure shows "Couldn't save the version. Try again."
+  - List: `GET …/versions` on open. Each row shows the name, author, relative time ("5 minutes ago", with the exact date and time on hover), node count, and Restore. A trash Delete button shows only when `canManageProject(role)` (owner or admin). Loading, error ("Couldn't load the versions." with Try again) and empty ("No versions yet") states copy the Specs tab's.
+  - Restore: a first click shows the confirmation inline in the row: "Replace the canvas for everyone in this project?" with Cancel and "Replace canvas". Confirming:
+    - saves the current canvas as "Before restore – {date time}" (if that fails, for example at the 50-version limit, the restore stops and shows the error)
+    - fetches `GET …/versions/[versionId]` and checks it with `isCanvasSnapshot`
+    - replaces the canvas through the template import path (`importTemplateRef`), which deletes all nodes and edges and adds the snapshot's in one Liveblocks batch, then fits the view; the dialog then closes
+    - autosave persists the result like any change
+    `ImportTemplate` now takes any `CanvasSnapshot` (templates still fit).
+  - Delete: an inline "Delete this version? This can't be undone." confirmation, then `DELETE …/versions/[versionId]`, and the row goes. (The spec doesn't ask for this confirmation; I added it because deleting can't be undone.)
+  - Not added (scope limits): diffs, previews, automatic versions; the version API is unchanged.
+  - TypeScript, ESLint and `npm run build` clean.
+  - Browser test with two users (2026-11-20; local Playwright scripts with headless Chromium at 1440×900, dev server on the production database, no AI calls). Alice Owner owned the project and Bob Builder was a collaborator (two throwaway Clerk users). The first two runs hit the intermittent Clerk sign-in timeout before anything was created; a sign-in-only check then passed and the full run went through.
+    - Loading: History opened before the canvas had mounted showed "Save version" disabled.
+    - Navbar: History sits right after Save. Empty list: "No versions yet". The default name is "Version 20 Nov 2026, 03:16".
+    - Save "Payments v1": "Saved "Payments v1"." and a row "Payments v1 · Alice Owner · just now · 11 nodes · Restore", with a trash button for Alice; the name box reset to a fresh default.
+    - Importing Microservices changed both canvases to 8 nodes. Restore on "Payments v1" asked "Replace the canvas for everyone in this project?"; "Replace canvas" closed the dialog, and both Alice's and Bob's canvases went back to the 11 Payments nodes (Merchant Apps present).
+    - The list then showed "Before restore – 20 Nov 2026, 03:16 · Alice Owner · just now · 8 nodes" above "Payments v1". After the 5-second debounce, autosave had stored the restored 11-node canvas (`GET …/canvas`).
+    - Bob (collaborator): 2 rows, 2 Restore buttons, 0 Delete buttons. Alice: 2 Delete buttons.
+    - Alice deleted "Before restore" ("Delete this version? This can't be undone."): the server list dropped to 1. The row left the list about 2.5 s after confirming; a follow-up run measured 2,454 ms and 2,463 ms (the Blob delete), and the last delete showed "No versions yet". Delete has no spinner meanwhile; its buttons are just disabled.
+    - Limit: 49 more versions through the API (all 201), then "Save version" showed "Version limit reached. Delete an old version first." Restore at the limit showed the same message, kept the dialog open, and left the canvas unchanged, because the "Before restore" save failed first.
+    - Console errors: only the two expected 409s from the limit checks (Alice); none for Bob. Screenshots: the dialog in the app's styling, the saved row, and the red limit message.
+    - Both test projects (versions and Blobs removed with them) and both Clerk users deleted; dev server stopped.
+  - Follow-up (2026-11-20, at the user's request): while a version is being deleted, its row dims and shows a spinner with "Deleting…" (`role="status"`, `aria-busy` on the row) in place of Restore and Delete, until the request finishes. TypeScript, ESLint and `npm run build` clean. Not browser-tested: creating the Clerk test user was blocked by the permission check.
+
 ## In Progress
 
 - None.
 
 ## Next Up
-- Feature 56: Version History UI (`context/feature-specs/56-version-history-ui.md`)
+- Feature 57: Approval Status (`context/feature-specs/57-approval-status.md`)
 
 ## Roadmap
 
@@ -809,7 +837,7 @@ Billing and production hardening (specs 34–39) are deferred. The user decided 
 ### Phase 4: Team workflow and integrations
 - 54 Node comments — Complete
 - 55 Version history API — Complete
-- 56 Version history UI — Not started
+- 56 Version history UI — Complete
 - 57 Approval status — Not started
 - 58 Decision record generation — Not started
 - 59 Decision record UI — Not started
