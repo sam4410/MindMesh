@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { designContextSchema } from "@/lib/design-context";
+import { EMPTY_DESIGN_CONTEXT, designContextSchema } from "@/lib/design-context";
 import { NODE_SHAPES } from "@/types/canvas";
 
 // One Liveblocks feed per room for background task activity: design now, spec generation later.
@@ -34,6 +34,19 @@ export const chatMessageSchema = z.object({
 });
 
 export type ChatMessage = z.infer<typeof chatMessageSchema>;
+
+// The design agent's input, stored on its TaskRun row by POST /api/ai/design, which validates the
+// request itself; designContext comes from the project record.
+export const designPayloadSchema = z.object({
+  prompt: z.string().min(1),
+  roomId: z.string().min(1),
+  // Fields the payload omits count as not set.
+  designContext: designContextSchema.transform((context) => ({ ...EMPTY_DESIGN_CONTEXT, ...context })),
+  // Research official best practices before designing (spec 70).
+  research: z.boolean(),
+  // Selected canvas nodes the request is about (spec 48); IDs no longer on the canvas are ignored.
+  focusNodeIds: z.array(z.string()),
+});
 
 // Spec generation input comes from the browser, so the route and the task both validate it.
 // Only what a spec needs is kept; other node and edge fields (position, size, color) are stripped.

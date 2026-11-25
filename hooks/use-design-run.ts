@@ -1,18 +1,15 @@
 "use client";
 
-import { useRealtimeRun } from "@trigger.dev/react-hooks";
 import { useEffect, useRef, useState } from "react";
 
 import type { SendChatMessage } from "@/hooks/use-ai-chat";
 import type { AiActivity } from "@/hooks/use-ai-status";
 import { designRunMessage, type FinishedRun } from "@/lib/ai-status";
 import { postJson } from "@/lib/post-json";
-import type { designAgent } from "@/trigger/design-agent";
 
-// The run this browser started, and the token that lets it read only that run.
+// The run this browser started; only its starter can read it.
 export interface ActiveRun {
   runId: string;
-  publicToken: string;
 }
 
 export interface DesignPromptOptions {
@@ -66,13 +63,6 @@ export function useDesignRun({ projectId, sendChat, activity }: UseDesignRunOpti
     setActiveRun(null);
   };
 
-  useRealtimeRun<typeof designAgent>(activeRun?.runId, {
-    accessToken: activeRun?.publicToken,
-    enabled: activeRun !== null,
-    skipColumns: ["payload"],
-    onComplete: (run, err) => finishRun(run, err),
-  });
-
   async function sendDesignPrompt(rawPrompt: string, { focusNodeIds, research = false, onPosted }: DesignPromptOptions = {}) {
     const prompt = rawPrompt.trim();
     if (!prompt || !projectId || isBusy || isStarting.current) return;
@@ -105,17 +95,7 @@ export function useDesignRun({ projectId, sendChat, activity }: UseDesignRunOpti
         await sendChat("Couldn't start the design. Try again.", "assistant").catch(console.error);
         return;
       }
-      try {
-        // The design route returns only the run ID; its token route issues the run-scoped token.
-        const { token } = await postJson<{ token: string }>("/api/ai/design/token", { runId });
-        setActiveRun({ runId, publicToken: token });
-      } catch (err) {
-        console.error(err);
-        await sendChat(
-          "The design started, but its progress can't be tracked here. Changes will still appear on the canvas.",
-          "assistant"
-        ).catch(console.error);
-      }
+      setActiveRun({ runId });
     } finally {
       isStarting.current = false;
       setIsSending(false);

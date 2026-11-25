@@ -1,12 +1,14 @@
 import { google } from "@ai-sdk/google";
-import { logger, metadata, schemaTask } from "@trigger.dev/sdk";
 import { generateText } from "ai";
+
+import { inngest, specRequested } from "@/inngest/client";
 
 import { EMPTY_DESIGN_CONTEXT } from "@/lib/design-context";
 import { buildSpecContextSections } from "@/lib/design-context-prompts";
 import { describeCanvasAndChat, unwrapFence } from "@/lib/document-prompt";
 import { saveProjectDocument } from "@/lib/project-spec-store";
-import { generateSpecPayloadSchema, type GenerateSpecPayload, type TaskStatus } from "@/types/tasks";
+import { completeTaskRun, failTaskRun, loadRunInput } from "@/lib/task-runs";
+import { generateSpecPayloadSchema, type GenerateSpecPayload } from "@/types/tasks";
 
 // Same Gemini model the design agent used before it moved to OpenAI.
 const MODEL_ID = "gemini-3.5-flash";
@@ -34,17 +36,22 @@ Rules:
 - Boundaries (when listed) are zones, not components: describe each one and the components inside it in the Architecture section, don't give it a Components subsection, and use them in the security and compliance discussion (for example, what is in PCI scope).
 - Output only the Markdown document: no preamble, and no code fence around it.`;
 
-export const generateSpec = schemaTask({
-  id: "generate-spec",
-  schema: generateSpecPayloadSchema,
-  // The config's default retries apply (they're off in dev): a failed attempt leaves no record and
-  // no file behind (see saveProjectDocument), so a retry can't produce duplicates.
-  run: async (payload) => {
-    // Read by the browser through a run-scoped token for realtime progress.
-    const setStatus = (status: TaskStatus) => metadata.set("status", status);
-
-    try {
-      setStatus("processing");
+export const generateSpec = inngest.createFunction(
+  {
+    id: "generate-spec",
+    triggers: [specRequested],
+    // Three attempts in all: a failed attempt leaves no record and no file behind (see
+    // saveProjectDocument), so a retry can't produce duplicates.
+    retries: 2,
+    onFailure: async ({ event, error }) => {
+      console.error("Spec generation failed", { error: error.message });
+      await failTaskRun(event.data.event.data.runId);
+    },
+  },
+  async ({ event, step }) => {
+    const { runId } = event.data;
+    const specId = await step.run("generate", async () => {
+      const payload = await loadRunInput(runId, generateSpecPayloadSchema);
       const { text } = await generateText({
         model: google(MODEL_ID), // google() reads GOOGLE_GENERATIVE_AI_API_KEY.
         system: SYSTEM_PROMPT,
@@ -55,19 +62,14 @@ export const generateSpec = schemaTask({
       if (!spec) throw new Error("The model returned an empty spec");
 
       const specId = await saveProjectDocument(payload.projectId, spec, "SPEC");
-      // The output stays plain Markdown; the browser finds the saved spec's ID here.
-      metadata.set("specId", specId);
-      setStatus("completed");
-      logger.info("Spec generated and saved", { projectId: payload.projectId, specId, characters: spec.length });
-      return spec;
-    } catch (err) {
-      logger.error("Spec generation failed", { error: err instanceof Error ? err.message : String(err) });
-      setStatus("failed");
-      // Rethrown so the run shows as failed (and retries where enabled).
-      throw err;
-    }
-  },
-});
+      console.info("Spec generated and saved", { projectId: payload.projectId, specId, characters: spec.length });
+      return specId;
+    });
+    // The Specs tab reloads its list; the Markdown stays in Blob.
+    await step.run("finish", () => completeTaskRun(runId, { specId }));
+    return { specId };
+  }
+);
 
 function describeContext(payload: GenerateSpecPayload) {
   // Fields the payload omits count as not set; "" when no context is set.

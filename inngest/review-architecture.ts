@@ -1,20 +1,21 @@
 import { openai } from "@ai-sdk/openai";
-import { logger, metadata, schemaTask } from "@trigger.dev/sdk";
 import { generateText, Output } from "ai";
+
+import { inngest, reviewRequested } from "@/inngest/client";
 
 import { boundaryMembers } from "@/lib/boundaries";
 import { getCloudService, serviceFullName } from "@/lib/cloud-services";
 import { EMPTY_DESIGN_CONTEXT } from "@/lib/design-context";
 import { buildReviewContext } from "@/lib/design-context-prompts";
+import { completeTaskRun, failTaskRun, loadRunInput } from "@/lib/task-runs";
 import {
   reviewPayloadSchema,
   reviewResultSchema,
   type ReviewPayload,
   type ReviewResult,
-  type TaskStatus,
 } from "@/types/tasks";
 
-// The design agent's model (trigger/design-agent.ts); kept in step by hand so that task stays unchanged.
+// The design agent's model (inngest/design-agent.ts); kept in step by hand so that task stays unchanged.
 const MODEL_ID = "gpt-6-luna";
 const REVIEW_TIMEOUT_MS = 120_000;
 
@@ -30,17 +31,21 @@ Rules:
 - Boundaries are zones such as PCI scope or a network segment, not components; use them when judging isolation and compliance scope.
 - Don't state or imply that the system is certified or compliant with any framework.`;
 
-export const reviewArchitecture = schemaTask({
-  id: "review-architecture",
-  schema: reviewPayloadSchema,
-  // A retry would run (and bill) the model call again.
-  retry: { maxAttempts: 1 },
-  run: async (payload): Promise<ReviewResult> => {
-    // Read by the browser through a run-scoped token for realtime progress, like generate-spec.
-    const setStatus = (status: TaskStatus) => metadata.set("status", status);
-
-    try {
-      setStatus("processing");
+export const reviewArchitecture = inngest.createFunction(
+  {
+    id: "review-architecture",
+    triggers: [reviewRequested],
+    // A retry would run (and bill) the model call again.
+    retries: 0,
+    onFailure: async ({ event, error }) => {
+      console.error("Architecture review failed", { error: error.message });
+      await failTaskRun(event.data.event.data.runId);
+    },
+  },
+  async ({ event, step }) => {
+    const { runId } = event.data;
+    const review = await step.run("review", async (): Promise<ReviewResult> => {
+      const payload = await loadRunInput(runId, reviewPayloadSchema);
       const { output } = await generateText({
         model: openai(MODEL_ID), // openai() reads OPENAI_API_KEY.
         system: SYSTEM_PROMPT,
@@ -61,21 +66,19 @@ export const reviewArchitecture = schemaTask({
         }),
       };
 
-      setStatus("completed");
-      logger.info("Architecture reviewed", {
+      console.info("Architecture reviewed", {
         projectId: payload.projectId,
         scores: Object.fromEntries(review.pillars.map((entry) => [entry.pillar, entry.score])),
         findings: review.findings.length,
         droppedNodeIds: dropped,
       });
       return review;
-    } catch (err) {
-      logger.error("Architecture review failed", { error: err instanceof Error ? err.message : String(err) });
-      setStatus("failed");
-      throw err;
-    }
-  },
-});
+    });
+    // The review isn't saved anywhere else (spec 53); the browser reads it from the run.
+    await step.run("finish", () => completeTaskRun(runId, review));
+    return review;
+  }
+);
 
 // The canvas as text, with node IDs so findings can point at nodes.
 function describeDesign({ nodes, edges, designContext }: ReviewPayload) {
