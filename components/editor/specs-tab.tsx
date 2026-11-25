@@ -1,13 +1,14 @@
 "use client";
 
-import { Download, FileText, ListChecks, Loader2, Sparkles } from "lucide-react";
-import { createElement, useEffect, useState } from "react";
+import { CheckCircle2, Download, ExternalLink, FileText, ListChecks, Loader2, Send, Sparkles } from "lucide-react";
+import { createElement, useEffect, useState, type FormEvent } from "react";
 import Markdown, { type Components, type ExtraProps } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import { EditorDialog } from "@/components/editor/editor-dialog";
 import { RunPoller } from "@/components/editor/run-poller";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { ChatEntry } from "@/hooks/use-ai-chat";
 import { useDocumentRun, type DocumentRunMessages } from "@/hooks/use-document-run";
@@ -25,6 +26,8 @@ interface SpecSummary {
   kind: SpecKind;
   filename: string;
   createdAt: string;
+  // The newest Confluence page it was published to (spec 61).
+  publishedUrl: string | null;
 }
 
 const SPEC_MESSAGES: DocumentRunMessages = {
@@ -76,6 +79,9 @@ type Loaded<T> = { status: "loading" } | { status: "error" } | { status: "ready"
 // Date and time in the viewer's locale, e.g. "Nov 9, 2026, 3:42 PM".
 const DATE_TIME_FORMAT = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
 
+// The last space key used, remembered per browser.
+const SPACE_KEY_STORAGE = "mindmesh:confluence-space-key";
+
 function downloadUrl(projectId: string, specId: string) {
   return `/api/projects/${projectId}/specs/${specId}/download`;
 }
@@ -94,6 +100,8 @@ export function SpecsTab({ projectId, isActive, chatMessages, getCanvas }: Specs
   const [attempt, setAttempt] = useState(0);
   const [selected, setSelected] = useState<SpecSummary | null>(null);
   const [filter, setFilter] = useState<KindFilter>("ALL");
+  // Whether the active workspace has an Atlassian connection, so "Publish to Confluence" is offered.
+  const [canPublish, setCanPublish] = useState(false);
   // The canvas guards' message; each run's own messages come from its hook.
   const [guardNotice, setGuardNotice] = useState<string | null>(null);
   // Which button was used last, so its run's notice is the one shown.
@@ -150,6 +158,29 @@ export function SpecsTab({ projectId, isActive, chatMessages, getCanvas }: Specs
       });
     return () => controller.abort();
   }, [projectId, attempt, isActive]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch("/api/integrations", { signal: controller.signal })
+      .then((res) => (res.ok ? (res.json() as Promise<{ provider: string }[]>) : []))
+      .then((items) => setCanPublish(items.some((item) => item.provider === "ATLASSIAN")))
+      .catch(() => {
+        // Without the list the button stays hidden; the publish route checks the connection anyway.
+      });
+    return () => controller.abort();
+  }, []);
+
+  // A publish updates the row without reloading the list.
+  function markPublished(specId: string, url: string) {
+    setSpecs((current) =>
+      current.status === "ready"
+        ? {
+            status: "ready",
+            data: current.data.map((spec) => (spec.id === specId ? { ...spec, publishedUrl: url } : spec)),
+          }
+        : current
+    );
+  }
 
   const activeFilter = FILTERS.find((option) => option.value === filter) ?? FILTERS[0];
   const visible =
@@ -281,6 +312,18 @@ export function SpecsTab({ projectId, isActive, chatMessages, getCanvas }: Specs
                     </span>
                   </span>
                 </button>
+                {spec.publishedUrl && (
+                  <a
+                    href={spec.publishedUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    aria-label={`Open ${spec.filename} in Confluence`}
+                    title="Open in Confluence"
+                    className={buttonVariants({ variant: "ghost", size: "icon-sm" })}
+                  >
+                    <ExternalLink />
+                  </a>
+                )}
                 <a
                   href={downloadUrl(projectId, spec.id)}
                   download={spec.filename}
@@ -301,6 +344,8 @@ export function SpecsTab({ projectId, isActive, chatMessages, getCanvas }: Specs
           key={selected.id}
           projectId={projectId}
           spec={selected}
+          canPublish={canPublish}
+          onPublished={(url) => markPublished(selected.id, url)}
           onClose={() => setSelected(null)}
         />
       )}
@@ -311,12 +356,15 @@ export function SpecsTab({ projectId, isActive, chatMessages, getCanvas }: Specs
 interface SpecPreviewDialogProps {
   projectId: string;
   spec: SpecSummary;
+  canPublish: boolean;
+  onPublished: (url: string) => void;
   onClose: () => void;
 }
 
 // The Markdown is fetched through the download route on open and dropped on close.
-function SpecPreviewDialog({ projectId, spec, onClose }: SpecPreviewDialogProps) {
+function SpecPreviewDialog({ projectId, spec, canPublish, onPublished, onClose }: SpecPreviewDialogProps) {
   const [content, setContent] = useState<Loaded<string>>({ status: "loading" });
+  const [showPublish, setShowPublish] = useState(false);
   const url = downloadUrl(projectId, spec.id);
 
   useEffect(() => {
@@ -349,6 +397,12 @@ function SpecPreviewDialog({ projectId, spec, onClose }: SpecPreviewDialogProps)
           <Button variant="outline" className="rounded-xl" onClick={onClose}>
             Close
           </Button>
+          {canPublish && !showPublish && (
+            <Button variant="outline" className="rounded-xl" onClick={() => setShowPublish(true)}>
+              <Send />
+              Publish to Confluence
+            </Button>
+          )}
           <a
             href={url}
             download={spec.filename}
@@ -360,6 +414,7 @@ function SpecPreviewDialog({ projectId, spec, onClose }: SpecPreviewDialogProps)
         </>
       }
     >
+      {showPublish && <ConfluencePublishForm projectId={projectId} specId={spec.id} onPublished={onPublished} />}
       <ScrollArea className="-mx-6 h-[60vh] border-y border-surface-border bg-surface">
         <div className="px-6 py-5">
           {content.status === "loading" && (
@@ -381,6 +436,124 @@ function SpecPreviewDialog({ projectId, spec, onClose }: SpecPreviewDialogProps)
         </div>
       </ScrollArea>
     </EditorDialog>
+  );
+}
+
+function readSpaceKey() {
+  try {
+    return localStorage.getItem(SPACE_KEY_STORAGE) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function rememberSpaceKey(key: string) {
+  try {
+    localStorage.setItem(SPACE_KEY_STORAGE, key);
+  } catch {
+    // Storage can be blocked; the key just isn't remembered.
+  }
+}
+
+interface ConfluencePublishFormProps {
+  projectId: string;
+  specId: string;
+  onPublished: (url: string) => void;
+}
+
+// Space key and optional parent page; each publish creates a new page.
+function ConfluencePublishForm({ projectId, specId, onPublished }: ConfluencePublishFormProps) {
+  const [spaceKey, setSpaceKey] = useState(readSpaceKey);
+  const [parentPageId, setParentPageId] = useState("");
+  const [publishing, setPublishing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [publishedUrl, setPublishedUrl] = useState<string | null>(null);
+
+  async function publish(event: FormEvent) {
+    event.preventDefault();
+    if (publishing) return;
+    const key = spaceKey.trim();
+    const parent = parentPageId.trim();
+    setPublishing(true);
+    setError(null);
+    setPublishedUrl(null);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/specs/${specId}/publish/confluence`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ spaceKey: key, ...(parent ? { parentPageId: parent } : {}) }),
+      });
+      const body = (await res.json().catch(() => null)) as { url?: string; error?: string } | null;
+      if (!res.ok || !body?.url) {
+        setError(body?.error ?? "Couldn't publish to Confluence. Try again.");
+        return;
+      }
+      rememberSpaceKey(key);
+      setPublishedUrl(body.url);
+      onPublished(body.url);
+    } catch {
+      setError("Couldn't publish to Confluence. Try again.");
+    } finally {
+      setPublishing(false);
+    }
+  }
+
+  return (
+    <form
+      onSubmit={publish}
+      aria-label="Publish to Confluence"
+      className="flex flex-col gap-3 rounded-2xl border border-surface-border bg-elevated p-4"
+    >
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="flex flex-col gap-1.5 text-xs font-medium text-copy-secondary">
+          Space key
+          <Input
+            value={spaceKey}
+            onChange={(e) => setSpaceKey(e.target.value)}
+            placeholder="e.g. ENG"
+            required
+            autoComplete="off"
+            className="rounded-xl"
+          />
+        </label>
+        <label className="flex flex-col gap-1.5 text-xs font-medium text-copy-secondary">
+          Parent page ID (optional)
+          <Input
+            value={parentPageId}
+            onChange={(e) => setParentPageId(e.target.value)}
+            inputMode="numeric"
+            autoComplete="off"
+            className="rounded-xl"
+          />
+        </label>
+      </div>
+      <div className="flex flex-wrap items-center gap-3">
+        <Button type="submit" disabled={publishing || !spaceKey.trim()} className="rounded-xl">
+          {publishing ? <Loader2 className="animate-spin" /> : <Send />}
+          {publishing ? "Publishing…" : "Publish"}
+        </Button>
+        {publishedUrl && (
+          <p role="status" className="flex items-center gap-1.5 text-sm text-success">
+            <CheckCircle2 className="h-4 w-4" />
+            Published
+            <a
+              href={publishedUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center gap-1 text-brand underline underline-offset-2"
+            >
+              Open page
+              <ExternalLink className="h-3.5 w-3.5" />
+            </a>
+          </p>
+        )}
+        {error && (
+          <p role="alert" className="text-sm text-error">
+            {error}
+          </p>
+        )}
+      </div>
+    </form>
   );
 }
 

@@ -6,7 +6,7 @@ Update this file whenever the current phase, active feature, or implementation s
 - Commercial roadmap, Phase 2 (Segmentation and ease of use). Features 40–43 and 68–71 complete; 34–39 deferred.
 
 ## Current Goal
-- Feature 60: Atlassian Connection
+- Feature 61: Confluence Spec Publish
 
 ## Completed
 
@@ -921,12 +921,41 @@ Update this file whenever the current phase, active feature, or implementation s
     - Test rows purged; the organization and both Clerk users deleted; dev server stopped.
     - **Not tested: connecting a real Atlassian site** (it needs the user's site URL, email and API token). That's the spec's "An admin can connect a real Atlassian site" check.
 
+- Feature 61: Confluence Spec Publish (2026-11-25; implemented and building, not yet tested against a real Confluence site).
+  - `marked` ^18.2.1 installed.
+  - `lib/atlassian/confluence.ts` (new):
+    - `markdownToStorage(markdown)`: GFM rendering (tables on) through a `Marked` instance. The output is XHTML-safe: `<br/>`, `<hr/>`, `<img/>` and `<input/>` self-close, and a bare `&` becomes `&amp;` outside CDATA. Raw HTML in the Markdown is escaped to text.
+    - Fenced code becomes the Confluence code macro (`ac:structured-macro ac:name="code"`), with the language parameter when the fence names one. The body is CDATA, and a `]]>` inside it is split so the section doesn't end early.
+    - `findSpaceId` (`GET /wiki/api/v2/spaces?keys=`) and `createPage` (`POST /wiki/api/v2/pages`, `status: "current"`, storage representation, optional `parentId`). Each call has a 10-second timeout and `redirect: "manual"`, and Atlassian 401/403 map to 400 "Atlassian rejected the request. Check the connection and space permissions."
+    - Errors the user sees: an unknown space → 400 `Confluence space "KEY" wasn't found.`; a missing parent → 400 "The parent page wasn't found in that space."; unreachable → 502.
+    - Confluence titles are unique per space. A republish whose title is taken retries with " (2)", " (3)", up to 5 tries, so publishing again creates a new page as the spec says.
+    - `lib/atlassian/confluence.test.ts`: `node --env-file=.env --import tsx --test lib/atlassian/confluence.test.ts`, 3/3 pass (headings, tables and void elements; the code macro with `<`, `&&` and `]]>` kept exactly; bare `&` and raw HTML escaped, entities kept).
+  - `lib/integrations.ts`: `AtlassianConnection` and `getAtlassianConnection(identity)`, which loads the active workspace's row and decrypts the token with `decryptSecret`.
+  - Schema: `publishedUrl String?` on `ProjectSpec`, set to the newest page's URL.
+    - Migration `20261125091657_add_spec_published_url` (one nullable column). Applied to local `ghost_ai` with `prisma migrate dev`; **not yet applied to production**. The specs list route selects the column, so production needs `prisma migrate deploy` before this code is deployed.
+  - `POST /api/projects/[projectId]/specs/[specId]/publish/confluence` (new):
+    - body `{ spaceKey, parentPageId? }`: 400 "Enter a valid Confluence space key" (letters, digits, `_`, `-`, an optional leading `~` for personal spaces) and 400 "The parent page ID must be a number".
+    - 401 signed out; project access as the download route (403/404); 404 "Spec not found" for a spec in another project.
+    - 404 "Connect Atlassian first" without a connection for the active workspace; 500 "Reconnect Atlassian in Settings → Integrations" when the token can't be decrypted.
+    - The Markdown comes from Blob with the download route's `get(filePath, { access: "private" })`.
+    - Title "{Project name} – {Technical spec | Decision records} ({YYYY-MM-DD})", with long project names cut to fit Confluence's 255 characters.
+    - Saves `publishedUrl` and returns `{ url }`.
+  - `GET /api/projects/[projectId]/specs` returns `publishedUrl` per document.
+  - `components/editor/specs-tab.tsx`:
+    - The tab reads `GET /api/integrations` once. The preview dialog shows "Publish to Confluence" only when the workspace has an Atlassian connection.
+    - The button opens a small form above the preview: space key (the last one used is remembered in `localStorage` under `mindmesh:confluence-space-key`, reads and writes in try/catch) and an optional parent page ID.
+    - On success the form shows "Published" with an "Open page" link, and the row updates in place. Errors from the route show as an alert.
+    - Rows with a `publishedUrl` show an "Open in Confluence" link icon (lucide `ExternalLink`; lucide has no Confluence logo) beside Download.
+  - TypeScript, ESLint and `npm run build` clean (the new route listed).
+  - **Not tested:** publishing to a real Confluence site (it needs the user's Atlassian connection and a space), and the browser flow.
+
 ## In Progress
 
+- Feature 61: Confluence Spec Publish, implemented and building. Still to do: the production migration, and a test against a real Confluence site.
 - Feature 60: Atlassian Connection, tested except a real Atlassian connection (the user's site and API token). `INTEGRATIONS_ENCRYPTION_KEY` still has to be set in Vercel (Production and Preview) by the user.
 
 ## Next Up
-- Feature 61: Confluence Spec Publish (`context/feature-specs/61-confluence-spec-publish.md`)
+- Feature 62: Jira Issues from Design (`context/feature-specs/62-jira-issues-from-design.md`)
 
 ## Roadmap
 
@@ -980,7 +1009,7 @@ Billing and production hardening (specs 34–39) are deferred. The user decided 
 - 58 Decision record generation — Complete (billing parts deferred)
 - 59 Decision record UI — Complete (billing parts deferred)
 - 60 Atlassian connection — Implemented and tested (real-site connection and Vercel env var pending)
-- 61 Confluence spec publish — Not started
+- 61 Confluence spec publish — Implemented (production migration and real-site test pending)
 - 62 Jira issues from design — Not started
 - 63 GitHub repository link — Not started
 
@@ -1031,7 +1060,7 @@ Billing and production hardening (specs 34–39) are deferred. The user decided 
 - LIVEBLOCKS_SECRET_KEY (sk_…) must be set in .env.local for /api/liveblocks-auth.
 - BLOB_READ_WRITE_TOKEN must be set in .env.local for canvas save/load. The Vercel Blob store is private, so code must use access: "private" (public access is rejected by this store).
 - TRIGGER_SECRET_KEY (tr_dev_…) must be set in .env.local to start tasks from the app. `trigger dev` uses the CLI login instead. Production needs its own key.
-- TRIGGER_PROJECT_REF must be set in .env.local too (not secret). `trigger dev` and `trigger deploy` read it from env files in the current directory, so run them from build-saas-app/. Other environments, such as CI, must set it themselves.
+- TRIGGER_PROJECT_REF (not secret) is read by `trigger.config.ts` from the shell environment when the CLI loads the config, before `--env-file` applies, so set it in the shell first (PowerShell: `$env:TRIGGER_PROJECT_REF = "proj_…"`). Corrected 2026-11-25; an earlier note said the CLI read it from env files. Live-site runs started with the dev key go to the Development branch `main`, so the local worker must run with `--branch main` to pick them up.
 - The design agent reads `OPENAI_API_KEY`; `trigger dev` passes `.env.local` to the worker only when it starts, so restart it after changing keys. Deployed design tasks need `OPENAI_API_KEY` and `LIVEBLOCKS_SECRET_KEY` set in the Trigger.dev dashboard. Deployed `generate-spec` tasks additionally need `GOOGLE_GENERATIVE_AI_API_KEY`, `DATABASE_URL`, and `BLOB_READ_WRITE_TOKEN`.
 - The generated Prisma client at `app/generated/prisma` is gitignored. `generate-spec` imports it through `lib/prisma.ts`, but this repo has no Trigger.dev Prisma build extension or configured pre-build generation. Its availability in deployed tasks is therefore not verified or guaranteed; a successful `trigger dev` run does not establish deployment behavior. Before deploying, configure the Prisma 7 `prismaExtension` in modern mode and ensure `npx prisma generate` runs before the Trigger.dev build, following the installed Trigger.dev extension guidance.
 - .env.local lives in build-saas-app/ (Next.js only loads env files from the project root). It holds NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY, CLERK_SECRET_KEY, NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in, NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up. proxy.ts throws at startup if the sign-in/sign-up URLs are missing.
