@@ -1,9 +1,7 @@
-import { runs, tasks } from "@trigger.dev/sdk";
-
+import { designRequested } from "@/inngest/client";
 import { getDesignContext } from "@/lib/design-context";
 import { getAccessibleProject, getCurrentIdentity } from "@/lib/project-access";
-import { prisma } from "@/lib/prisma";
-import type { designAgent } from "@/trigger/design-agent";
+import { startTaskRun } from "@/lib/task-runs";
 
 const MAX_PROMPT_LENGTH = 4000;
 // Selected nodes the request is about (spec 48).
@@ -66,29 +64,21 @@ export async function POST(req: Request) {
 
   let runId: string;
   try {
-    ({ id: runId } = await tasks.trigger<typeof designAgent>("design-agent", {
-      prompt: trimmedPrompt,
-      roomId,
-      // From the project record on the server, never from the request body.
-      designContext: getDesignContext(project),
-      // Look up official best practices before designing (spec 70); off unless asked for.
-      research: research === true,
-      // Only when nodes are selected, so other runs get exactly the earlier payload.
-      ...(focusNodeIds?.length ? { focusNodeIds } : {}),
-    }));
-  } catch (err) {
-    console.error("Failed to start design task", err);
-    return Response.json({ error: "Couldn't start the task" }, { status: 502 });
-  }
-
-  try {
-    await prisma.taskRun.create({ data: { runId, projectId, userId: identity.userId } });
-  } catch (err) {
-    console.error("Failed to record design task run", err);
-    // Without a record nobody can get a token for this run, so don't leave it running untracked.
-    await runs.cancel(runId).catch((cancelErr) => {
-      console.error("Failed to cancel untracked design task run", cancelErr);
+    runId = await startTaskRun(designRequested, {
+      projectId,
+      userId: identity.userId,
+      input: {
+        prompt: trimmedPrompt,
+        roomId,
+        // From the project record on the server, never from the request body.
+        designContext: getDesignContext(project),
+        // Look up official best practices before designing (spec 70); off unless asked for.
+        research: research === true,
+        focusNodeIds: focusNodeIds ?? [],
+      },
     });
+  } catch (err) {
+    console.error("Failed to start design run", err);
     return Response.json({ error: "Couldn't start the task" }, { status: 502 });
   }
 

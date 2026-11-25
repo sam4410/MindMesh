@@ -932,7 +932,7 @@ Update this file whenever the current phase, active feature, or implementation s
     - `lib/atlassian/confluence.test.ts`: `node --env-file=.env --import tsx --test lib/atlassian/confluence.test.ts`, 3/3 pass (headings, tables and void elements; the code macro with `<`, `&&` and `]]>` kept exactly; bare `&` and raw HTML escaped, entities kept).
   - `lib/integrations.ts`: `AtlassianConnection` and `getAtlassianConnection(identity)`, which loads the active workspace's row and decrypts the token with `decryptSecret`.
   - Schema: `publishedUrl String?` on `ProjectSpec`, set to the newest page's URL.
-    - Migration `20261125091657_add_spec_published_url` (one nullable column). Applied to local `ghost_ai` with `prisma migrate dev`; **not yet applied to production**. The specs list route selects the column, so production needs `prisma migrate deploy` before this code is deployed.
+    - Migration `20261125091657_add_spec_published_url` (one nullable column). Applied to local `ghost_ai` with `prisma migrate dev`, and to production Prisma Postgres with `prisma migrate deploy` on 2026-11-26 (status: up to date).
   - `POST /api/projects/[projectId]/specs/[specId]/publish/confluence` (new):
     - body `{ spaceKey, parentPageId? }`: 400 "Enter a valid Confluence space key" (letters, digits, `_`, `-`, an optional leading `~` for personal spaces) and 400 "The parent page ID must be a number".
     - 401 signed out; project access as the download route (403/404); 404 "Spec not found" for a spec in another project.
@@ -949,9 +949,37 @@ Update this file whenever the current phase, active feature, or implementation s
   - TypeScript, ESLint and `npm run build` clean (the new route listed).
   - **Not tested:** publishing to a real Confluence site (it needs the user's Atlassian connection and a space), and the browser flow.
 
+- Background jobs moved from Trigger.dev to Inngest (2026-11-26, the user's decision: Trigger.dev blocks production deploys on its Free plan, and Inngest's free plan covers this app).
+  - `inngest` 4.27.0 added; `@trigger.dev/sdk`, `@trigger.dev/react-hooks`, `@trigger.dev/build` and `trigger.config.ts` removed. `trigger/*.ts` moved to `inngest/*.ts` (git history kept); prompts, models and timeouts unchanged.
+  - `inngest/client.ts`: client `mindmesh` with `checkpointing: false`, so each step is its own request and gets the full 300 seconds (v4 otherwise runs several steps in one request). Events `ai/design.requested`, `ai/spec.requested`, `ai/adr.requested` and `ai/review.requested` carry only `{ runId }`.
+  - `app/api/inngest/route.ts`: `serve()` with `maxDuration = 300`. `proxy.ts` lets `/api/inngest` through without a Clerk session; Inngest signs its requests and `serve()` checks them.
+  - TaskRun (migration `20261125194403_inngest_task_runs`): `status` (`RUNNING`, `COMPLETED`, `FAILED`), `input` (the payload; events are limited to 256 KiB on the free plan and a spec's chat history can exceed that) and `output`. Applied to local `ghost_ai`, and to production Prisma Postgres with `prisma migrate deploy` on 2026-11-26 (status: up to date, 13 migrations).
+  - `lib/task-runs.ts`:
+    - `startTaskRun` saves the row first, then sends the event, and deletes the row if sending fails (502).
+    - Functions re-read and re-validate their input with `loadRunInput`; an invalid payload is a `NonRetriableError`.
+    - `completeTaskRun` and `failTaskRun` record the outcome. `getRunState` returns `{ id, isCompleted, isSuccess, output? }` to the run's starter only, and reports a run still `RUNNING` after 15 minutes as failed (lost functions and old Trigger.dev rows).
+  - Functions:
+    - `design-agent`, 0 retries (a retry would reapply changes). Steps: `start` (room, feed, presence, "started"), `research` (only when asked; capped at 75 s), `plan` (capped at 120 s; reads the canvas), `apply`, `finish`. Presence has a heartbeat inside each step. `onFailure` posts the "failed" status, clears presence and marks the run failed.
+    - `generate-spec` and `generate-adr`, 2 retries (3 attempts, as before). Steps: `generate` (180 s cap; saves the document) and `finish` (`output: { specId }`).
+    - `review-architecture`, 0 retries. Steps: `review` and `finish` (`output`: the review).
+  - Routes: the four start routes call `startTaskRun` and still return 202 `{ runId }`. The four `/token` routes are gone. New `GET /api/ai/runs/[runId]` (401 signed out, 404 unless the caller started the run).
+  - Browser: `RunPoller` now checks `/api/ai/runs/[runId]` every 2 s (`RUN_POLL_INTERVAL_MS`, was 10 s as a fallback) and calls `onComplete` once. It replaces `useRealtimeRun` in `use-design-run`, `use-document-run` and `review-tab`; the token messages are gone. Design progress still reaches everyone through the Liveblocks status feed and presence.
+  - `lib/design-research.ts` and `lib/project-spec-store.ts` log with `console`; `AbortTaskRunError` became `NonRetriableError`.
+  - TypeScript, ESLint and `npm run build` clean (`/api/inngest` and `/api/ai/runs/[runId]` listed).
+  - Test without AI calls (local Inngest dev server, dev server on local `ghost_ai`): the app served 8 functions (4 plus their failure handlers). A design run and a review run with invalid payloads each failed with `NonRetriableError`, `onFailure` marked them `FAILED`, and `getRunState` reported `isCompleted: true, isSuccess: false` within about 2 s. Another user got `null`. Test rows deleted; both servers stopped.
+  - Live test with 4 approved AI calls (2026-11-26; local Inngest dev server, dev server and script on local `ghost_ai`, a temporary Liveblocks room). Runs were started with `startTaskRun` and followed with `getRunState`, as the routes and `RunPoller` do.
+    - Design (no research): succeeded in 22 s with 9 applied and 2 skipped. The skips were the model's second edges between the same pair of nodes (service to database for read and write, service to Redis for check and populate), which `applyDesignAction` rejects as duplicates, as before the move.
+      - The room got 5 nodes and 4 labeled edges: Client, API Gateway, Shortening Service, Redis Cache, URL Database.
+      - The status feed went started → processing → completed.
+    - On that canvas, run in parallel: spec in 26 s (a SPEC row and a 5,992-byte Blob file); decision records in 30 s (an ADR row, 3,765 bytes); review in 16 s (all 5 pillar scores and 5 findings).
+    - Another user got `null` for the run.
+    - Cleanup: both documents (Blob and rows), the 4 run rows and the room deleted; both servers stopped.
+  - **Not tested:** research-mode design, the browser flow and the routes with a real Clerk session, and Inngest Cloud on Vercel.
+
 ## In Progress
 
-- Feature 61: Confluence Spec Publish, implemented and building. Still to do: the production migration, and a test against a real Confluence site.
+- Inngest move: built and tested locally, including one real run of each function. Production migration applied and all four Inngest keys set in Vercel (Production keys from Inngest Production, Preview keys from Inngest Branch environments; the Inngest Vercel integration is enabled for `mindmesh`). Still to do: commit, push, and a check on the Preview and live sites.
+- Feature 61: Confluence Spec Publish, implemented, committed (`b39035b`) and migrated in production. Still to do: a test against a real Confluence site.
 - Feature 60: Atlassian Connection, tested except a real Atlassian connection (the user's site and API token). `INTEGRATIONS_ENCRYPTION_KEY` still has to be set in Vercel (Production and Preview) by the user.
 
 ## Next Up
@@ -1009,7 +1037,7 @@ Billing and production hardening (specs 34–39) are deferred. The user decided 
 - 58 Decision record generation — Complete (billing parts deferred)
 - 59 Decision record UI — Complete (billing parts deferred)
 - 60 Atlassian connection — Implemented and tested (real-site connection and Vercel env var pending)
-- 61 Confluence spec publish — Implemented (production migration and real-site test pending)
+- 61 Confluence spec publish — Implemented (real-site test pending)
 - 62 Jira issues from design — Not started
 - 63 GitHub repository link — Not started
 
@@ -1059,8 +1087,8 @@ Billing and production hardening (specs 34–39) are deferred. The user decided 
 - After a Prisma schema change: apply it (`npx prisma migrate deploy`, or `migrate dev` when authoring), run `npx prisma generate`, then restart `npm run dev`. lib/prisma.ts caches the client on globalThis in development, so hot reload keeps the old client and new fields fail with PrismaClientValidationError. (Hit with 20261103165400_add_project_deletion_state; applied 2026-11-03.)
 - LIVEBLOCKS_SECRET_KEY (sk_…) must be set in .env.local for /api/liveblocks-auth.
 - BLOB_READ_WRITE_TOKEN must be set in .env.local for canvas save/load. The Vercel Blob store is private, so code must use access: "private" (public access is rejected by this store).
-- TRIGGER_SECRET_KEY (tr_dev_…) must be set in .env.local to start tasks from the app. `trigger dev` uses the CLI login instead. Production needs its own key.
-- TRIGGER_PROJECT_REF (not secret) is read by `trigger.config.ts` from the shell environment when the CLI loads the config, before `--env-file` applies, so set it in the shell first (PowerShell: `$env:TRIGGER_PROJECT_REF = "proj_…"`). Corrected 2026-11-25; an earlier note said the CLI read it from env files. Live-site runs started with the dev key go to the Development branch `main`, so the local worker must run with `--branch main` to pick them up.
-- The design agent reads `OPENAI_API_KEY`; `trigger dev` passes `.env.local` to the worker only when it starts, so restart it after changing keys. Deployed design tasks need `OPENAI_API_KEY` and `LIVEBLOCKS_SECRET_KEY` set in the Trigger.dev dashboard. Deployed `generate-spec` tasks additionally need `GOOGLE_GENERATIVE_AI_API_KEY`, `DATABASE_URL`, and `BLOB_READ_WRITE_TOKEN`.
-- The generated Prisma client at `app/generated/prisma` is gitignored. `generate-spec` imports it through `lib/prisma.ts`, but this repo has no Trigger.dev Prisma build extension or configured pre-build generation. Its availability in deployed tasks is therefore not verified or guaranteed; a successful `trigger dev` run does not establish deployment behavior. Before deploying, configure the Prisma 7 `prismaExtension` in modern mode and ensure `npx prisma generate` runs before the Trigger.dev build, following the installed Trigger.dev extension guidance.
+- Background jobs run on Inngest since 2026-11-26 (see Completed). Production needs `INNGEST_EVENT_KEY` and `INNGEST_SIGNING_KEY` in Vercel, which the Inngest Vercel integration sets. Locally, `.env.local` has `INNGEST_DEV=1` (never set it in Vercel); run `npx inngest-cli@latest dev -u http://localhost:3000/api/inngest` next to `npm run dev`. The functions run inside the Next.js app, so they read the app's own env vars (`OPENAI_API_KEY`, `GOOGLE_GENERATIVE_AI_API_KEY`, `LIVEBLOCKS_SECRET_KEY`, `DATABASE_URL`, `BLOB_READ_WRITE_TOKEN`). `TRIGGER_SECRET_KEY` and `TRIGGER_PROJECT_REF` are no longer used.
+- (Historical, Trigger.dev) TRIGGER_PROJECT_REF (not secret) was read by `trigger.config.ts` from the shell environment when the CLI loads the config, before `--env-file` applies, so set it in the shell first (PowerShell: `$env:TRIGGER_PROJECT_REF = "proj_…"`). Corrected 2026-11-25; an earlier note said the CLI read it from env files. Live-site runs started with the dev key go to the Development branch `main`, so the local worker must run with `--branch main` to pick them up.
+- (Historical, Trigger.dev) The design agent reads `OPENAI_API_KEY`; `trigger dev` passes `.env.local` to the worker only when it starts, so restart it after changing keys. Deployed design tasks need `OPENAI_API_KEY` and `LIVEBLOCKS_SECRET_KEY` set in the Trigger.dev dashboard. Deployed `generate-spec` tasks additionally need `GOOGLE_GENERATIVE_AI_API_KEY`, `DATABASE_URL`, and `BLOB_READ_WRITE_TOKEN`.
+- (Historical, Trigger.dev; no longer applies, since the functions now run in the Next.js build, which runs `prisma generate` on install) The generated Prisma client at `app/generated/prisma` is gitignored. `generate-spec` imported it through `lib/prisma.ts`, but this repo has no Trigger.dev Prisma build extension or configured pre-build generation. Its availability in deployed tasks is therefore not verified or guaranteed; a successful `trigger dev` run does not establish deployment behavior. Before deploying, configure the Prisma 7 `prismaExtension` in modern mode and ensure `npx prisma generate` runs before the Trigger.dev build, following the installed Trigger.dev extension guidance.
 - .env.local lives in build-saas-app/ (Next.js only loads env files from the project root). It holds NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY, CLERK_SECRET_KEY, NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in, NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up. proxy.ts throws at startup if the sign-in/sign-up URLs are missing.

@@ -7,11 +7,18 @@ export const AI_AGENT = {
   info: { name: "MindMesh", avatar: "", color: "#8b82ff" },
 } as const;
 
-// While waiting on a run, its status is also polled at this interval, because the realtime
-// "completed" update sometimes never reaches the browser (seen three times by 2026-11-15).
-export const RUN_POLL_INTERVAL_MS = 10_000;
+// How often the browser checks a run it started (components/editor/run-poller.tsx).
+export const RUN_POLL_INTERVAL_MS = 2_000;
 
-// The parts of a Trigger.dev realtime run that decide the final chat message.
+// What GET /api/ai/runs/[runId] returns (lib/task-runs.ts).
+export interface RunState<TOutput = unknown> {
+  id: string;
+  isCompleted: boolean;
+  isSuccess: boolean;
+  output?: TOutput;
+}
+
+// The parts of a finished design run that decide the final chat message.
 export interface FinishedRun {
   isCompleted: boolean;
   isSuccess: boolean;

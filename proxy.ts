@@ -8,7 +8,8 @@ if (!signInUrl || !signUpUrl) {
   throw new Error("NEXT_PUBLIC_CLERK_SIGN_IN_URL and NEXT_PUBLIC_CLERK_SIGN_UP_URL must be set");
 }
 
-const publicPaths = [signInUrl, signUpUrl];
+// /api/inngest is called by Inngest, which signs its requests (checked by serve()), not by a user.
+const publicPaths = [signInUrl, signUpUrl, "/api/inngest"];
 
 function isPublicPath(pathname: string, requestUrl: URL) {
   return publicPaths.some((path) => {

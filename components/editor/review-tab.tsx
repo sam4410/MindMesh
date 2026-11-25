@@ -1,6 +1,5 @@
 "use client";
 
-import { useRealtimeRun } from "@trigger.dev/react-hooks";
 import { ClipboardCheck, Loader2, LocateFixed, Sparkles } from "lucide-react";
 import { useRef, useState } from "react";
 
@@ -11,7 +10,6 @@ import { useCanvasFocus } from "@/hooks/use-canvas-focus";
 import type { CanvasSnapshot } from "@/lib/canvas-snapshot";
 import { postJson } from "@/lib/post-json";
 import { cn } from "@/lib/utils";
-import type { reviewArchitecture } from "@/trigger/review-architecture";
 import { REVIEW_SEVERITIES, type ReviewPillar, type ReviewResult } from "@/types/tasks";
 
 const PILLAR_LABELS: Record<ReviewPillar, string> = {
@@ -38,26 +36,19 @@ interface ReviewTabProps {
   getCanvas: () => CanvasSnapshot | null;
 }
 
-// The run this browser started, and the token that lets it read only that run.
-interface ActiveRun {
-  runId: string;
-  publicToken: string;
-}
-
 type Finding = ReviewResult["findings"][number];
 
 export function ReviewTab({ projectId, getCanvas }: ReviewTabProps) {
   const { focusNodes } = useCanvasFocus();
   const [isStarting, setIsStarting] = useState(false);
-  const [activeRun, setActiveRun] = useState<ActiveRun | null>(null);
+  const [activeRun, setActiveRun] = useState<{ runId: string } | null>(null);
   // The latest review only; it isn't saved anywhere (spec 53).
   const [result, setResult] = useState<{ review: ReviewResult; at: Date } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  // onComplete can fire again when the subscription stops; handle each run once.
+  // Each run is handled once.
   const finishedRunId = useRef<string | null>(null);
   const isReviewing = isStarting || activeRun !== null;
 
-  // Called by the realtime subscription and by the polling fallback; each run is handled once.
   const finishRun = (
     run: { id: string; isCompleted: boolean; isSuccess: boolean; output?: ReviewResult } | undefined,
     err?: Error
@@ -77,14 +68,6 @@ export function ReviewTab({ projectId, getCanvas }: ReviewTabProps) {
     setActiveRun(null);
   };
 
-  useRealtimeRun<typeof reviewArchitecture>(activeRun?.runId, {
-    accessToken: activeRun?.publicToken,
-    enabled: activeRun !== null,
-    // The output is the review itself, so only the payload is skipped.
-    skipColumns: ["payload"],
-    onComplete: (run, err) => finishRun(run, err),
-  });
-
   // Sends the live canvas to POST /api/ai/review, then follows the run.
   async function review() {
     if (isReviewing) return;
@@ -94,26 +77,17 @@ export function ReviewTab({ projectId, getCanvas }: ReviewTabProps) {
 
     setNotice(null);
     setIsStarting(true);
-    let runId: string;
     try {
-      ({ runId } = await postJson<{ runId: string }>("/api/ai/review", {
+      const { runId } = await postJson<{ runId: string }>("/api/ai/review", {
         roomId: projectId,
         nodes: canvas.nodes,
         edges: canvas.edges,
-      }));
+      });
+      setActiveRun({ runId });
     } catch (err) {
       // shortcut: a 402 limit_reached (spec 37) gets this generic message until billing returns.
       console.error(err);
       setNotice("Couldn't start the review. Try again.");
-      setIsStarting(false);
-      return;
-    }
-    try {
-      const { token } = await postJson<{ token: string }>("/api/ai/review/token", { runId });
-      setActiveRun({ runId, publicToken: token });
-    } catch (err) {
-      console.error(err);
-      setNotice("The review started, but its result can't be shown here. Try again in a moment.");
     } finally {
       setIsStarting(false);
     }
@@ -127,11 +101,7 @@ export function ReviewTab({ projectId, getCanvas }: ReviewTabProps) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {activeRun && (
-        <RunPoller<typeof reviewArchitecture>
-          runId={activeRun.runId}
-          accessToken={activeRun.publicToken}
-          onComplete={finishRun}
-        />
+        <RunPoller runId={activeRun.runId} onComplete={finishRun} />
       )}
       <div className="flex flex-col gap-2 p-4 pb-3">
         <Button

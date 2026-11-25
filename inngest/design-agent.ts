@@ -1,8 +1,9 @@
 import { openai } from "@ai-sdk/openai";
 import { LiveblocksError } from "@liveblocks/node";
 import { mutateFlow } from "@liveblocks/react-flow/node";
-import { logger, task } from "@trigger.dev/sdk";
 import { generateText, Output } from "ai";
+
+import { designRequested, inngest } from "@/inngest/client";
 
 import { AI_AGENT } from "@/lib/ai-status";
 import { boundaryMembers } from "@/lib/boundaries";
@@ -14,23 +15,13 @@ import {
   designPlanSchema,
   type DesignPlan,
 } from "@/lib/design-actions";
-import { EMPTY_DESIGN_CONTEXT, type DesignContext } from "@/lib/design-context";
+import type { DesignContext } from "@/lib/design-context";
 import { buildDesignContextRules } from "@/lib/design-context-prompts";
-import { researchBestPractices, type ResearchResult } from "@/lib/design-research";
+import { researchBestPractices } from "@/lib/design-research";
 import { getLiveblocks } from "@/lib/liveblocks";
+import { completeTaskRun, failTaskRun, loadRunInput } from "@/lib/task-runs";
 import { NODE_COLORS, type CanvasEdge, type CanvasNode } from "@/types/canvas";
-import { AI_STATUS_FEED_ID, type TaskStatusMessage } from "@/types/tasks";
-
-interface DesignAgentPayload {
-  prompt: string;
-  roomId: string;
-  // Read from the project record by POST /api/ai/design; optional so runs queued before it existed still work.
-  designContext?: DesignContext;
-  // Research official best practices before designing (spec 70); off by default.
-  research?: boolean;
-  // Selected canvas nodes the request is about (spec 48); IDs no longer on the canvas are ignored.
-  focusNodeIds?: string[];
-}
+import { AI_STATUS_FEED_ID, designPayloadSchema, type TaskStatusMessage } from "@/types/tasks";
 
 const MODEL_ID = "gpt-6-luna";
 // Fails the run with a status message instead of leaving everyone watching "thinking" for minutes.
@@ -81,118 +72,167 @@ For a shape change, updateNodeData width and height are explicit pixel dimension
 New nodes get a temporary id you choose (like "n1"); use it to connect edges in the same response. Refer to existing nodes and edges by their id.
 Use at most ${MAX_ACTIONS} actions. If the request isn't about system design, return no actions and say so in the summary.`;
 
-export const designAgent = task({
-  id: "design-agent",
-  // A retry would apply the canvas changes from the failed attempt a second time.
-  retry: { maxAttempts: 1 },
-  run: async ({
-    prompt,
-    roomId,
-    designContext = EMPTY_DESIGN_CONTEXT,
-    research: researchRequested = false,
-    focusNodeIds = [],
-  }: DesignAgentPayload) => {
-    const liveblocks = getLiveblocks();
-    // Same call as /api/liveblocks-auth, so the room exists even if nobody has opened it yet.
-    await liveblocks.getOrCreateRoom(roomId, { defaultAccesses: [] });
-    await ensureStatusFeed(roomId);
+type DesignCanvas = { nodes: CanvasNode[]; edges: CanvasEdge[] };
 
-    // Status and presence are best effort: a failed update must not abort the design.
-    const postStatus = async (status: TaskStatusMessage["status"], text: string) => {
-      try {
-        await liveblocks.createFeedMessage({ roomId, feedId: AI_STATUS_FEED_ID, data: { status, text } satisfies TaskStatusMessage });
-      } catch (err) {
-        logger.warn("Couldn't post AI status", { status, error: String(err) });
-      }
-    };
-    let presence: Liveblocks["Presence"] = { cursor: null, thinking: true };
-    const sendPresence = async (ttl = PRESENCE_TTL_SECONDS) => {
-      try {
-        await liveblocks.setPresence(roomId, { userId: AI_AGENT.id, userInfo: AI_AGENT.info, data: presence, ttl });
-      } catch (err) {
-        logger.warn("Couldn't update AI presence", { error: String(err) });
-      }
-    };
-    const heartbeat = setInterval(() => void sendPresence(), HEARTBEAT_MS);
+// Status and presence are best effort: a failed update must not abort the design.
+async function postStatus(roomId: string, status: TaskStatusMessage["status"], text: string) {
+  try {
+    await getLiveblocks().createFeedMessage({ roomId, feedId: AI_STATUS_FEED_ID, data: { status, text } satisfies TaskStatusMessage });
+  } catch (err) {
+    console.warn("Couldn't post AI status", { status, error: String(err) });
+  }
+}
 
-    try {
-      await sendPresence();
+async function sendPresence(roomId: string, presence: Liveblocks["Presence"], ttl = PRESENCE_TTL_SECONDS) {
+  try {
+    await getLiveblocks().setPresence(roomId, { userId: AI_AGENT.id, userInfo: AI_AGENT.info, data: presence, ttl });
+  } catch (err) {
+    console.warn("Couldn't update AI presence", { error: String(err) });
+  }
+}
+
+// Keeps the AI's presence alive while a step works; presence expires on its own between steps
+// only if the function dies. `move` updates the cursor for the rest of the step.
+async function withPresence<T>(roomId: string, work: (move: (cursor: { x: number; y: number }) => Promise<void>) => Promise<T>) {
+  let presence: Liveblocks["Presence"] = { cursor: null, thinking: true };
+  await sendPresence(roomId, presence);
+  const heartbeat = setInterval(() => void sendPresence(roomId, presence), HEARTBEAT_MS);
+  try {
+    return await work(async (cursor) => {
+      presence = { cursor, thinking: true };
+      await sendPresence(roomId, presence);
+    });
+  } finally {
+    clearInterval(heartbeat);
+  }
+}
+
+// There's no call to remove presence, so clear it and let it expire as soon as allowed.
+const clearPresence = (roomId: string) => sendPresence(roomId, { cursor: null, thinking: false }, 2);
+
+async function readCanvas(roomId: string) {
+  let canvas: DesignCanvas = { nodes: [], edges: [] };
+  await mutateFlow<CanvasNode, CanvasEdge>({ client: getLiveblocks(), roomId }, (flow) => {
+    canvas = { nodes: [...flow.nodes], edges: [...flow.edges] };
+  });
+  return canvas;
+}
+
+// One Inngest step each for research, planning and applying, so each stays well within the
+// 300-second Vercel limit: research stops at 75s and planning at 120s.
+export const designAgent = inngest.createFunction(
+  {
+    id: "design-agent",
+    triggers: [designRequested],
+    // A retry would apply the canvas changes from the failed attempt a second time.
+    retries: 0,
+    onFailure: async ({ event, error }) => {
+      const { runId } = event.data.event.data;
+      console.error("Design generation failed", { runId, error: error.message });
+      const roomId = await loadRunInput(runId, designPayloadSchema)
+        .then((input) => input.roomId)
+        .catch(() => null);
+      if (roomId) {
+        await postStatus(
+          roomId,
+          "failed",
+          "Couldn't finish the design. Any changes made before the error are still on the canvas. Try again."
+        );
+        await clearPresence(roomId);
+      }
+      await failTaskRun(runId);
+    },
+  },
+  async ({ event, step }) => {
+    const { runId } = event.data;
+    // Read on each invocation (outside a step), so the payload isn't copied into Inngest's step state.
+    const { prompt, roomId, designContext, research: researchRequested, focusNodeIds } = await loadRunInput(
+      runId,
+      designPayloadSchema
+    );
+
+    await step.run("start", async () => {
+      const liveblocks = getLiveblocks();
+      // Same call as /api/liveblocks-auth, so the room exists even if nobody has opened it yet.
+      await liveblocks.getOrCreateRoom(roomId, { defaultAccesses: [] });
+      await ensureStatusFeed(roomId);
+      await sendPresence(roomId, { cursor: null, thinking: true });
       // The sidebar shows only the latest status, so this one names the request for everyone.
       const excerpt = prompt.length > 80 ? `${prompt.slice(0, 80)}…` : prompt;
-      await postStatus("started", `Planning a design for “${excerpt}”…`);
+      await postStatus(roomId, "started", `Planning a design for “${excerpt}”…`);
+    });
 
-      let canvas: { nodes: CanvasNode[]; edges: CanvasEdge[] } = { nodes: [], edges: [] };
-      await mutateFlow<CanvasNode, CanvasEdge>({ client: liveblocks, roomId }, (flow) => {
-        canvas = { nodes: [...flow.nodes], edges: [...flow.edges] };
-      });
+    // Optional: official best-practice notes for the design prompt (spec 70).
+    const research = researchRequested
+      ? await step.run("research", () =>
+          withPresence(roomId, async () => {
+            await postStatus(roomId, "processing", "Researching best practices…");
+            const startedAt = Date.now();
+            const result = await researchBestPractices({ prompt, designContext });
+            console.info("Research finished", {
+              ms: Date.now() - startedAt,
+              available: result !== null,
+              cached: result?.cached ?? false,
+              sources: result?.sources.length ?? 0,
+            });
+            return result;
+          })
+        )
+      : null;
+    const researchNote =
+      researchRequested && !research ? " Research wasn't available, so this design uses general best practices." : "";
+    const sources = research?.sources ?? [];
 
-      // Optional: official best-practice notes for the design prompt (spec 70).
-      let research: ResearchResult | null = null;
-      let researchNote = "";
-      if (researchRequested) {
-        await postStatus("processing", "Researching best practices…");
-        const startedAt = Date.now();
-        research = await researchBestPractices({ prompt, designContext });
-        logger.info("Research finished", {
-          ms: Date.now() - startedAt,
-          available: research !== null,
-          cached: research?.cached ?? false,
-          sources: research?.sources.length ?? 0,
+    const plan = await step.run("plan", () =>
+      withPresence(roomId, async () => {
+        const plan = await planDesign(prompt, await readCanvas(roomId), designContext, research?.notes ?? null, focusNodeIds);
+        console.info("Design planned", {
+          actions: plan.actions.length,
+          plan: plan.plan,
+          summary: plan.summary,
+          designContext,
         });
-        if (!research) researchNote = " Research wasn't available, so this design uses general best practices.";
-      }
-      const sources = research?.sources ?? [];
+        return { summary: plan.summary, actions: plan.actions.slice(0, MAX_ACTIONS) };
+      })
+    );
 
-      const plan = await planDesign(prompt, canvas, designContext, research?.notes ?? null, focusNodeIds);
-      const actions = plan.actions.slice(0, MAX_ACTIONS);
-      logger.info("Design planned", {
-        actions: actions.length,
-        plan: plan.plan,
-        summary: plan.summary,
-        designContext,
-      });
+    const result = await step.run("apply", () =>
+      withPresence(roomId, async (move) => {
+        const { actions } = plan;
+        if (actions.length === 0) {
+          await postStatus(roomId, "completed", `${plan.summary || "No changes were needed."}${researchNote}`);
+          return { applied: 0, skipped: 0, sources };
+        }
 
-      if (actions.length === 0) {
-        await postStatus("completed", `${plan.summary || "No changes were needed."}${researchNote}`);
-        return { applied: 0, skipped: 0, sources };
-      }
+        await postStatus(roomId, "processing", `Applying ${actions.length} ${actions.length === 1 ? "change" : "changes"} to the canvas…`);
+        const ids = new Map<string, string>();
+        let applied = 0;
+        // One mutation per action, so collaborators watch the design build up step by step.
+        for (const action of actions) {
+          let cursor: { x: number; y: number } | null = null;
+          await mutateFlow<CanvasNode, CanvasEdge>({ client: getLiveblocks(), roomId }, (flow) => {
+            cursor = applyDesignAction(flow, action as DesignPlan["actions"][number], ids);
+          });
+          if (!cursor) continue;
+          applied += 1;
+          await move(cursor);
+        }
 
-      await postStatus("processing", `Applying ${actions.length} ${actions.length === 1 ? "change" : "changes"} to the canvas…`);
-      const ids = new Map<string, string>();
-      let applied = 0;
-      // One mutation per action, so collaborators watch the design build up step by step.
-      for (const action of actions) {
-        let cursor: { x: number; y: number } | null = null;
-        await mutateFlow<CanvasNode, CanvasEdge>({ client: liveblocks, roomId }, (flow) => {
-          cursor = applyDesignAction(flow, action, ids);
-        });
-        if (!cursor) continue;
-        applied += 1;
-        presence = { cursor, thinking: true };
-        await sendPresence();
-      }
+        const skipped = actions.length - applied;
+        const skippedNote =
+          skipped > 0 ? ` Skipped ${skipped} ${skipped === 1 ? "change" : "changes"} that referred to missing nodes or edges.` : "";
+        await postStatus(roomId, "completed", `${plan.summary}${skippedNote}${researchNote}`.trim());
+        return { applied, skipped, sources };
+      })
+    );
 
-      const skipped = actions.length - applied;
-      const skippedNote =
-        skipped > 0 ? ` Skipped ${skipped} ${skipped === 1 ? "change" : "changes"} that referred to missing nodes or edges.` : "";
-      await postStatus("completed", `${plan.summary}${skippedNote}${researchNote}`.trim());
-      return { applied, skipped, sources };
-    } catch (err) {
-      logger.error("Design generation failed", { error: err instanceof Error ? err.message : String(err) });
-      await postStatus(
-        "failed",
-        "Couldn't finish the design. Any changes made before the error are still on the canvas. Try again."
-      );
-      // Rethrown so the run shows as failed in Trigger.dev.
-      throw err;
-    } finally {
-      clearInterval(heartbeat);
-      // There's no call to remove presence, so clear it and let it expire as soon as allowed.
-      presence = { cursor: null, thinking: false };
-      await sendPresence(2);
-    }
-  },
-});
+    await step.run("finish", async () => {
+      await clearPresence(roomId);
+      await completeTaskRun(runId, result);
+    });
+    return result;
+  }
+);
 
 async function ensureStatusFeed(roomId: string) {
   try {
@@ -205,7 +245,7 @@ async function ensureStatusFeed(roomId: string) {
 
 async function planDesign(
   prompt: string,
-  canvas: { nodes: CanvasNode[]; edges: CanvasEdge[] },
+  canvas: DesignCanvas,
   designContext: DesignContext,
   researchNotes: string | null,
   focusNodeIds: string[]

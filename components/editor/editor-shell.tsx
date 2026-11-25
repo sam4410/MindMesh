@@ -29,7 +29,6 @@ import { EMPTY_DESIGN_CONTEXT, type DesignContext } from "@/lib/design-context";
 import type { ApprovalState, ApprovalStatus } from "@/lib/project-approval";
 import { canManageProject } from "@/lib/project-roles";
 import type { ProjectSummary } from "@/lib/projects";
-import type { designAgent } from "@/trigger/design-agent";
 
 interface EditorShellProps {
   ownedProjects: ProjectSummary[];
@@ -277,14 +276,8 @@ export function EditorShell({ ownedProjects, sharedProjects, children }: EditorS
           <main className="relative h-full overflow-hidden bg-base">
             {children}
           </main>
-          {/* Polling fallback for this browser's design run; see components/editor/run-poller.tsx. */}
-          {designRun.activeRun && (
-            <RunPoller<typeof designAgent>
-              runId={designRun.activeRun.runId}
-              accessToken={designRun.activeRun.publicToken}
-              onComplete={designRun.finishRun}
-            />
-          )}
+          {/* Follows this browser's design run; see components/editor/run-poller.tsx. */}
+          {designRun.activeRun && <RunPoller runId={designRun.activeRun.runId} onComplete={designRun.finishRun} />}
           {currentProject && (
             <AiSidebar
               isOpen={isAiSidebarOpen}

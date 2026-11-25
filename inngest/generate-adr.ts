@@ -1,11 +1,13 @@
 import { google } from "@ai-sdk/google";
-import { logger, metadata, schemaTask } from "@trigger.dev/sdk";
 import { generateText } from "ai";
+
+import { adrRequested, inngest } from "@/inngest/client";
 
 import { EMPTY_DESIGN_CONTEXT, formatDesignContext } from "@/lib/design-context";
 import { describeCanvasAndChat, unwrapFence } from "@/lib/document-prompt";
 import { saveProjectDocument } from "@/lib/project-spec-store";
-import { generateSpecPayloadSchema, type GenerateSpecPayload, type TaskStatus } from "@/types/tasks";
+import { completeTaskRun, failTaskRun, loadRunInput } from "@/lib/task-runs";
+import { generateSpecPayloadSchema, type GenerateSpecPayload } from "@/types/tasks";
 
 // Same Gemini model as generate-spec.
 const MODEL_ID = "gemini-3.5-flash";
@@ -38,17 +40,22 @@ Rules:
 - Don't invent requirements, numbers or reasons the canvas and chat don't support; mark what you infer.
 - Output only the Markdown document: no preamble, and no code fence around it.`;
 
-export const generateAdr = schemaTask({
-  id: "generate-adr",
-  // The same payload as generate-spec (spec 58).
-  schema: generateSpecPayloadSchema,
-  // Like generate-spec: a failed attempt leaves no record and no file behind, so retries can't duplicate.
-  run: async (payload) => {
-    // Read by the browser through a run-scoped token for realtime progress.
-    const setStatus = (status: TaskStatus) => metadata.set("status", status);
-
-    try {
-      setStatus("processing");
+export const generateAdr = inngest.createFunction(
+  {
+    id: "generate-adr",
+    triggers: [adrRequested],
+    // Like generate-spec: a failed attempt leaves no record and no file behind, so retries can't duplicate.
+    retries: 2,
+    onFailure: async ({ event, error }) => {
+      console.error("ADR generation failed", { error: error.message });
+      await failTaskRun(event.data.event.data.runId);
+    },
+  },
+  async ({ event, step }) => {
+    const { runId } = event.data;
+    const specId = await step.run("generate", async () => {
+      // The same payload as generate-spec (spec 58).
+      const payload = await loadRunInput(runId, generateSpecPayloadSchema);
       const { text } = await generateText({
         model: google(MODEL_ID), // google() reads GOOGLE_GENERATIVE_AI_API_KEY.
         system: SYSTEM_PROMPT,
@@ -60,24 +67,18 @@ export const generateAdr = schemaTask({
       if (!/^## ADR-\d+:/m.test(adr)) throw new Error("The model returned no decision records");
 
       const specId = await saveProjectDocument(payload.projectId, adr, "ADR");
-      // As with specs: the output is the Markdown, and the browser finds the saved ID here.
-      metadata.set("specId", specId);
-      setStatus("completed");
-      logger.info("ADRs generated and saved", {
+      console.info("ADRs generated and saved", {
         projectId: payload.projectId,
         specId,
         records: adr.match(/^## ADR-\d+:/gm)?.length ?? 0,
         characters: adr.length,
       });
-      return adr;
-    } catch (err) {
-      logger.error("ADR generation failed", { error: err instanceof Error ? err.message : String(err) });
-      setStatus("failed");
-      // Rethrown so the run shows as failed (and retries where enabled).
-      throw err;
-    }
-  },
-});
+      return specId;
+    });
+    await step.run("finish", () => completeTaskRun(runId, { specId }));
+    return { specId };
+  }
+);
 
 function describeContext(payload: GenerateSpecPayload) {
   // Fields the payload omits count as not set; "" when no context is set.

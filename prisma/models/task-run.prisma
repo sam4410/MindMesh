@@ -1,11 +1,23 @@
-// A Trigger.dev run and who started it, used to verify ownership before issuing a token for it.
+enum TaskRunStatus {
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+// A background AI run (Inngest), who started it, and its outcome. The browser polls it through
+// GET /api/ai/runs/[runId], and only the user who started it can read it.
 model TaskRun {
-  id        String   @id @default(cuid())
-  runId     String   @unique // Postgres backs this with an index, so runId needs no separate @@index
+  id        String        @id @default(cuid())
+  runId     String        @unique // our own UUID, sent with the Inngest event; Postgres indexes it
   projectId String
-  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project   Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
   userId    String // Clerk user ID
-  createdAt DateTime @default(now())
+  status    TaskRunStatus @default(RUNNING)
+  // The run's payload. Kept here rather than in the event, which is limited to 256 KiB on the free plan.
+  input     Json?
+  // What the browser needs once it finishes: the design counts and sources, or the review.
+  output    Json?
+  createdAt DateTime      @default(now())
 
   @@index([userId, projectId])
 }

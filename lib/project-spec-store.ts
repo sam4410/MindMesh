@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
-import { AbortTaskRunError, logger } from "@trigger.dev/sdk";
 import { del, put } from "@vercel/blob";
+import { NonRetriableError } from "inngest";
 
 import { prisma } from "@/lib/prisma";
 import { specBlobPath, type SpecKind } from "@/lib/project-spec";
@@ -14,7 +14,7 @@ export async function saveProjectDocument(projectId: string, markdown: string, k
     where: { id: projectId, deletionPending: false },
     select: { id: true },
   });
-  if (!project) throw new AbortTaskRunError("The project was deleted before the document could be saved");
+  if (!project) throw new NonRetriableError("The project was deleted before the document could be saved");
 
   const specId = randomUUID();
   const { url } = await put(specBlobPath(projectId, specId), markdown, {
@@ -26,7 +26,7 @@ export async function saveProjectDocument(projectId: string, markdown: string, k
     await prisma.projectSpec.create({ data: { id: specId, projectId, filePath: url, kind } });
   } catch (err) {
     // Without its record nothing can reach or clean up the file.
-    await del(url).catch((delErr) => logger.warn("Couldn't delete unsaved document file", { url, error: String(delErr) }));
+    await del(url).catch((delErr) => console.warn("Couldn't delete unsaved document file", { url, error: String(delErr) }));
     throw err;
   }
   return specId;

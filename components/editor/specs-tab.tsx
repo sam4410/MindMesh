@@ -15,8 +15,6 @@ import { useDocumentRun, type DocumentRunMessages } from "@/hooks/use-document-r
 import type { CanvasSnapshot } from "@/lib/canvas-snapshot";
 import type { SpecKind } from "@/lib/project-spec";
 import { cn } from "@/lib/utils";
-import type { generateAdr } from "@/trigger/generate-adr";
-import type { generateSpec } from "@/trigger/generate-spec";
 import { SPEC_MAX_CHAT_MESSAGES } from "@/types/tasks";
 
 // What GET /api/projects/[projectId]/specs returns per document; the content comes from the download route.
@@ -32,15 +30,12 @@ interface SpecSummary {
 
 const SPEC_MESSAGES: DocumentRunMessages = {
   startFailed: "Couldn't start spec generation. Try again.",
-  tokenFailed: "The spec is being generated, but its progress can't be shown. It will appear here when it's ready.",
   runFailed: "Couldn't generate the spec. Try again.",
   lostTrack: "Lost track of the spec run. The spec will appear here when it's ready.",
 };
 
 const ADR_MESSAGES: DocumentRunMessages = {
   startFailed: "Couldn't start generating decision records. Try again.",
-  tokenFailed:
-    "The decision records are being generated, but their progress can't be shown. They will appear here when they're ready.",
   runFailed: "Couldn't generate the decision records. Try again.",
   lostTrack: "Lost track of the decision records run. They will appear here when they're ready.",
 };
@@ -110,13 +105,11 @@ export function SpecsTab({ projectId, isActive, chatMessages, getCanvas }: Specs
   const reload = () => setAttempt((n) => n + 1);
   const specRun = useDocumentRun({
     triggerRoute: "/api/ai/spec",
-    tokenRoute: "/api/ai/spec/token",
     messages: SPEC_MESSAGES,
     onSuccess: reload,
   });
   const adrRun = useDocumentRun({
     triggerRoute: "/api/ai/adr",
-    tokenRoute: "/api/ai/adr/token",
     messages: ADR_MESSAGES,
     onSuccess: reload,
   });
@@ -193,21 +186,9 @@ export function SpecsTab({ projectId, isActive, chatMessages, getCanvas }: Specs
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {/* Polling fallbacks for each document run; see components/editor/run-poller.tsx. */}
-      {specRun.activeRun && (
-        <RunPoller<typeof generateSpec>
-          runId={specRun.activeRun.runId}
-          accessToken={specRun.activeRun.publicToken}
-          onComplete={specRun.finishRun}
-        />
-      )}
-      {adrRun.activeRun && (
-        <RunPoller<typeof generateAdr>
-          runId={adrRun.activeRun.runId}
-          accessToken={adrRun.activeRun.publicToken}
-          onComplete={adrRun.finishRun}
-        />
-      )}
+      {/* Follows each document run; see components/editor/run-poller.tsx. */}
+      {specRun.activeRun && <RunPoller runId={specRun.activeRun.runId} onComplete={specRun.finishRun} />}
+      {adrRun.activeRun && <RunPoller runId={adrRun.activeRun.runId} onComplete={adrRun.finishRun} />}
       <div className="flex flex-col gap-2 p-4 pb-3">
         <Button
           onClick={() => generate("SPEC")}

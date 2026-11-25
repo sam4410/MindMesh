@@ -2,7 +2,6 @@ import { createHash } from "node:crypto";
 
 import { createMCPClient } from "@ai-sdk/mcp";
 import { openai } from "@ai-sdk/openai";
-import { logger } from "@trigger.dev/sdk";
 import { generateText, stepCountIs, type ToolSet } from "ai";
 
 import { formatDesignContext, type DesignContext } from "@/lib/design-context";
@@ -172,18 +171,18 @@ export async function researchBestPractices({
       return { notes: cached.notes, sources: cached.sources as unknown as ResearchSource[], cached: true };
     }
   } catch (err) {
-    logger.warn("Research cache read failed", { error: err instanceof Error ? err.message : String(err) });
+    console.warn("Research cache read failed", { error: err instanceof Error ? err.message : String(err) });
   }
 
   let researched: { notes: string; sources: ResearchSource[] };
   try {
     researched = await runResearch(prompt, designContext);
   } catch (err) {
-    logger.warn("Research unavailable", { error: err instanceof Error ? err.message : String(err) });
+    console.warn("Research unavailable", { error: err instanceof Error ? err.message : String(err) });
     return null;
   }
   if (!researched.notes) {
-    logger.warn("Research returned no notes");
+    console.warn("Research returned no notes");
     return null;
   }
 
@@ -195,7 +194,7 @@ export async function researchBestPractices({
     });
   } catch (err) {
     // A failed cache write only costs a repeat search next time.
-    logger.warn("Research cache write failed", { error: err instanceof Error ? err.message : String(err) });
+    console.warn("Research cache write failed", { error: err instanceof Error ? err.message : String(err) });
   }
   return { ...researched, cached: false };
 }
