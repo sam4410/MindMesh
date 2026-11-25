@@ -21,7 +21,7 @@ export async function GET(_req: Request, ctx: Context) {
     where: { projectId },
     orderBy: { createdAt: "desc" },
     take: MAX_SPECS,
-    select: { id: true, createdAt: true, kind: true },
+    select: { id: true, createdAt: true, kind: true, publishedUrl: true },
   });
   return Response.json(
     {
@@ -30,6 +30,7 @@ export async function GET(_req: Request, ctx: Context) {
         kind: spec.kind,
         filename: specFilename(project.name, spec.createdAt, spec.id, spec.kind),
         createdAt: spec.createdAt.toISOString(),
+        publishedUrl: spec.publishedUrl,
       })),
     },
     { headers: { "cache-control": "private, no-store" } }

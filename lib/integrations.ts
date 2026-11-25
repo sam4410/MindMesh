@@ -1,3 +1,4 @@
+import { decryptSecret } from "@/lib/crypto";
 import type { Identity } from "@/lib/project-access";
 import { prisma } from "@/lib/prisma";
 
@@ -65,4 +66,21 @@ export async function verifyAtlassian(siteUrl: string, email: string, apiToken: 
     console.warn("Atlassian verification failed", { siteUrl, error: err instanceof Error ? err.name : "unknown" });
     return false;
   }
+}
+
+// A stored Atlassian connection with its token decrypted, for server-side calls only (spec 61).
+export interface AtlassianConnection {
+  siteUrl: string;
+  email: string;
+  apiToken: string;
+}
+
+// The active workspace's Atlassian connection, or null when none is stored.
+export async function getAtlassianConnection(identity: Identity): Promise<AtlassianConnection | null> {
+  const row = await prisma.integration.findUnique({
+    where: { billingAccountId_provider: { billingAccountId: workspaceAccountId(identity), provider: "ATLASSIAN" } },
+    select: { siteUrl: true, email: true, encryptedToken: true },
+  });
+  if (!row) return null;
+  return { siteUrl: row.siteUrl, email: row.email, apiToken: decryptSecret(row.encryptedToken) };
 }
