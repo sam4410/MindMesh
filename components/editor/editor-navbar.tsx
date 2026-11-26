@@ -15,6 +15,7 @@ import {
   Save,
   Share2,
   Sparkles,
+  Ticket,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -32,8 +33,8 @@ import { allowedApprovalChanges, type ApprovalState, type ApprovalStatus } from 
 import type { ProjectRole } from "@/lib/project-roles";
 import { cn } from "@/lib/utils";
 
-// Export menu items: images (spec 50), then Mermaid and draw.io text (spec 51).
-export type ExportAction = ImageFormat | "mermaid" | "drawio" | "copy-mermaid";
+// Export menu items: images (spec 50), Mermaid and draw.io text (spec 51), then Jira issues (spec 62).
+export type ExportAction = ImageFormat | "mermaid" | "drawio" | "copy-mermaid" | "jira";
 
 // Shown briefly under the Export button: a failure, or "Copied".
 export interface ExportNotice {
@@ -233,6 +234,11 @@ export function EditorNavbar({
                   <DropdownMenuItem disabled={!canExport} onClick={() => onExport?.("copy-mermaid")}>
                     <Copy />
                     Copy Mermaid
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem disabled={!canExport} onClick={() => onExport?.("jira")}>
+                    <Ticket />
+                    Create Jira issues
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>

@@ -6,7 +6,7 @@ Update this file whenever the current phase, active feature, or implementation s
 - Commercial roadmap, Phase 2 (Segmentation and ease of use). Features 40–43 and 68–71 complete; 34–39 deferred.
 
 ## Current Goal
-- Feature 61: Confluence Spec Publish
+- Feature 62: Jira Issues from Design
 
 ## Completed
 
@@ -921,7 +921,7 @@ Update this file whenever the current phase, active feature, or implementation s
     - Test rows purged; the organization and both Clerk users deleted; dev server stopped.
     - **Not tested: connecting a real Atlassian site** (it needs the user's site URL, email and API token). That's the spec's "An admin can connect a real Atlassian site" check.
 
-- Feature 61: Confluence Spec Publish (2026-11-25; implemented and building, not yet tested against a real Confluence site).
+- Feature 61: Confluence Spec Publish (2026-11-25; real-site test 2026-11-26).
   - `marked` ^18.2.1 installed.
   - `lib/atlassian/confluence.ts` (new):
     - `markdownToStorage(markdown)`: GFM rendering (tables on) through a `Marked` instance. The output is XHTML-safe: `<br/>`, `<hr/>`, `<img/>` and `<input/>` self-close, and a bare `&` becomes `&amp;` outside CDATA. Raw HTML in the Markdown is escaped to text.
@@ -947,7 +947,13 @@ Update this file whenever the current phase, active feature, or implementation s
     - On success the form shows "Published" with an "Open page" link, and the row updates in place. Errors from the route show as an alert.
     - Rows with a `publishedUrl` show an "Open in Confluence" link icon (lucide `ExternalLink`; lucide has no Confluence logo) beside Download.
   - TypeScript, ESLint and `npm run build` clean (the new route listed).
-  - **Not tested:** publishing to a real Confluence site (it needs the user's Atlassian connection and a space), and the browser flow.
+  - Real-site test (2026-11-26, local app on the production database with the local Inngest dev server, the user's Confluence on the same free site, team space `MD`, restricted access):
+    - The user generated a spec for "Chat Application Design" and published it from the preview dialog. It showed "Published" with an "Open page" link.
+    - The page is "Chat Application Design – Technical spec (2026-11-26)" in space `MD`.
+    - Read back through the stored connection, the page matches the spec's Markdown exactly: 1 title heading, 9 section headings, 31 sub-headings and 2 tables (24 rows). It also has 32 lists and 210 inline code spans.
+    - The spec row's `publishedUrl` holds the page URL.
+    - The spec had no fenced code blocks, so the code macro is covered only by `lib/atlassian/confluence.test.ts`.
+  - **Not tested:** a bad space key or parent page against the real site, and publishing from the live site (it needs `INTEGRATIONS_ENCRYPTION_KEY` there, set on 2026-11-26 and active after the next Production deployment).
 
 - Background jobs moved from Trigger.dev to Inngest (2026-11-26, the user's decision: Trigger.dev blocks production deploys on its Free plan, and Inngest's free plan covers this app).
   - `inngest` 4.27.0 added; `@trigger.dev/sdk`, `@trigger.dev/react-hooks`, `@trigger.dev/build` and `trigger.config.ts` removed. `trigger/*.ts` moved to `inngest/*.ts` (git history kept); prompts, models and timeouts unchanged.
@@ -976,14 +982,54 @@ Update this file whenever the current phase, active feature, or implementation s
     - Cleanup: both documents (Blob and rows), the 4 run rows and the room deleted; both servers stopped.
   - **Not tested:** research-mode design, the browser flow and the routes with a real Clerk session, and Inngest Cloud on Vercel.
 
+- Feature 62: Jira Issues from Design (2026-11-26).
+  - `lib/atlassian/adf.ts`: `buildIssueDescription({ projectName, label, service, incoming, outgoing })` returns an ADF document:
+    - "Component from the MindMesh design '{projectName}'."
+    - "Service: {full service name}" when the node has a known cloud service.
+    - "Incoming connections:" and "Outgoing connections:" bullet lists, each line like "Order Intake → Order Queue: Publish Order".
+    - Blank lines are dropped, since ADF rejects empty text nodes.
+  - `lib/atlassian/jira.ts`: `createJiraIssue` (`POST {site}/rest/api/3/issue` with project key, issue type name, summary and ADF description; 10-second timeout; `redirect: "manual"`). It never throws:
+    - 401/403 → "Atlassian rejected the request. Check the connection and Jira project permissions."
+    - A 400 returns Jira's own messages (`errorMessages` plus `field: message`, cut to 300 characters).
+    - A timeout returns "Jira didn't respond in time."; other network errors "Couldn't reach Jira."
+    - The issue URL is `{site}/browse/{key}`.
+    - `issueSummary(label)` gives "Implement {label}" on one line, cut to Jira's 255 characters.
+  - `lib/atlassian/adf.test.ts`: `node --env-file=.env --import tsx --test lib/atlassian/adf.test.ts`, 3/3 pass (contents and both lists; no empty text nodes; intro only when there's nothing else; summary on one line and cut).
+  - `POST /api/projects/[projectId]/jira/issues` (new):
+    - body `{ jiraProjectKey, issueType (default "Task"), components: [{ nodeId, label, service?, incoming, outgoing }] }`, validated with zod: 1–25 components, key `^[A-Za-z][A-Za-z0-9_]*$` (uppercased), issue type 1–60 characters, label 1–500, node ID up to 120, at most 100 connections per direction of up to 1,200 characters each.
+    - 401 signed out; project access as in the other project routes; 404 "Connect Atlassian first" without a connection for the active workspace; 500 "Reconnect Atlassian in Settings → Integrations" when the token can't be decrypted.
+    - The server builds the descriptions from the project's name and the cloud service list.
+    - Issues are created 5 at a time, so 25 take at most about 50 seconds rather than 250. A failure doesn't stop the rest.
+    - Returns `{ created: [{ nodeId, key, url }], failed: [{ nodeId, error }] }`.
+  - `types/canvas.ts`: optional `jiraIssue?: { key, url }` on `CanvasNodeData`.
+  - `components/editor/jira-issues-dialog.tsx` (new):
+    - `jiraComponents(nodes, edges, onlyIds?)` lists the components (boundaries skipped) with their incoming and outgoing connections. Connections name the node at the other end even when only a selection is listed.
+    - Fields: Jira project key and issue type (default "Task").
+    - A checklist of components; ones that already have an issue are unchecked and show "Has KEY-1".
+    - "Create N issues" is disabled with nothing checked or more than 25 checked (with a message).
+    - Results: created keys as links with their component, and failures with their reasons.
+    - Errors from the route show as an alert, with an "Open Integrations" link for "Connect Atlassian first".
+  - Linking on the canvas: the dialog lives in the canvas (outside the canvas div, so its keys don't reach the canvas's shortcuts). Created issues are written with React Flow's `updateNodeData` in one `room.batch`, so they sync to every collaborator through Liveblocks and one undo removes them.
+  - `canvas-node.tsx`: a small issue-key badge at the node's top left, linking to the issue in a new tab.
+    - Node data can be written by any collaborator, so the badge only renders for `https://{site}.atlassian.net/browse/{KEY-123}` URLs. A check of 6 cases passed: a valid URL, `javascript:`, another host, a lookalike host, a query string and `http`.
+  - Entry points:
+    - "Jira issues" in the node selection toolbar, shown when the selection has a component and not tied to the AI's state.
+    - "Create Jira issues" in the Export menu, which opens the dialog with every component through a `CanvasJiraContext` ref (`hooks/use-canvas-jira.ts`, the same pattern as the focus and export refs).
+  - TypeScript, ESLint and `npm run build` clean (the new route listed).
+  - Real-site test (2026-11-26, local app on the production database, the user's free Jira site, project `KAN`):
+    - The user selected 3 Azure components on "Chat Application Design" and created issues. The dialog listed `KAN-4`, `KAN-5` and `KAN-6` as created, with no failures.
+    - Read back through the stored connection: each is a Task titled "Implement {label}", e.g. "Implement History API (Container Apps)". Each description has the design name, the full service name ("Azure Container Apps", "Azure API Management") and the incoming and outgoing connections with edge labels, e.g. "API Gateway (API Management) → History API (Container Apps): History".
+    - The project's Liveblocks room holds `jiraIssue` on exactly those 3 nodes, with `https://{site}.atlassian.net/browse/KAN-n` URLs, the form the badge accepts.
+  - **Not tested:** the failure path with a real bad key, a second collaborator watching the badge appear, and the feature on Vercel. It isn't committed yet.
+
 ## In Progress
 
-- Inngest move: built and tested locally, including one real run of each function. Production migration applied and all four Inngest keys set in Vercel (Production keys from Inngest Production, Preview keys from Inngest Branch environments; the Inngest Vercel integration is enabled for `mindmesh`). Still to do: commit, push, and a check on the Preview and live sites.
-- Feature 61: Confluence Spec Publish, implemented, committed (`b39035b`) and migrated in production. Still to do: a test against a real Confluence site.
-- Feature 60: Atlassian Connection, tested except a real Atlassian connection (the user's site and API token). `INTEGRATIONS_ENCRYPTION_KEY` still has to be set in Vercel (Production and Preview) by the user.
+- Feature 62: Jira Issues from Design, tested on a real Jira site. Still to do: commit, push and merge.
+- Inngest move: committed (`d00832f`), merged to `main` (PR #16) and live. Inngest Production synced `mindmesh` at `https://mindmesh-black.vercel.app/api/inngest` with all 8 functions, so the signing key works. Still to do: a design prompt on the live site to confirm the event key (the user's work machine blocks the site, so it waits for another device).
+- Feature 60: Atlassian Connection, tested. A real Atlassian Cloud site (a free Jira site) was connected from the local app on 2026-11-26, with a classic API token; scoped tokens don't work with site URLs, since Atlassian only accepts them through `api.atlassian.com`. The connection was saved to the production database, encrypted with the local `.env.local` key. Connecting on the live site failed with "Couldn't connect. Try again." because `INTEGRATIONS_ENCRYPTION_KEY` isn't set in Vercel, so the route crashed after verifying. The user set it in Vercel (Production and Preview) with the same value as `.env.local` on 2026-11-26; it applies after the next Production deployment.
 
 ## Next Up
-- Feature 62: Jira Issues from Design (`context/feature-specs/62-jira-issues-from-design.md`)
+- Feature 63: GitHub Repository Link (`context/feature-specs/63-github-repository-link.md`)
 
 ## Roadmap
 
@@ -1036,9 +1082,9 @@ Billing and production hardening (specs 34–39) are deferred. The user decided 
 - 57 Approval status — Complete
 - 58 Decision record generation — Complete (billing parts deferred)
 - 59 Decision record UI — Complete (billing parts deferred)
-- 60 Atlassian connection — Implemented and tested (real-site connection and Vercel env var pending)
-- 61 Confluence spec publish — Implemented (real-site test pending)
-- 62 Jira issues from design — Not started
+- 60 Atlassian connection — Complete
+- 61 Confluence spec publish — Complete
+- 62 Jira issues from design — Complete (uncommitted)
 - 63 GitHub repository link — Not started
 
 ### Phase 5: Cost and infrastructure code
