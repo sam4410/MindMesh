@@ -29,6 +29,8 @@ model Project {
   architectureStyle String?
   industry          String?
   projectType       String?
+  // The project's GitHub repository, normalized to https://github.com/{owner}/{repo} (spec 63)
+  repositoryUrl     String?
   createdAt      DateTime              @default(now())
   updatedAt      DateTime              @updatedAt
   collaborators  ProjectCollaborator[]

@@ -90,6 +90,8 @@ export const specRequestSchema = z.object({
 export const generateSpecPayloadSchema = specRequestSchema.extend({
   projectId: z.string().min(1),
   designContext: designContextSchema,
+  // The project's GitHub repository (spec 63); optional so runs started before it existed still parse.
+  repositoryUrl: z.string().max(300).nullable().optional(),
 });
 
 export type GenerateSpecPayload = z.infer<typeof generateSpecPayloadSchema>;
@@ -147,3 +149,4 @@ export const reviewResultSchema = z.object({
 });
 
 export type ReviewResult = z.infer<typeof reviewResultSchema>;
+

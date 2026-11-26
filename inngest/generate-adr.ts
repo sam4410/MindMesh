@@ -4,7 +4,7 @@ import { generateText } from "ai";
 import { adrRequested, inngest } from "@/inngest/client";
 
 import { EMPTY_DESIGN_CONTEXT, formatDesignContext } from "@/lib/design-context";
-import { describeCanvasAndChat, unwrapFence } from "@/lib/document-prompt";
+import { describeCanvasAndChat, repositoryInstruction, unwrapFence } from "@/lib/document-prompt";
 import { saveProjectDocument } from "@/lib/project-spec-store";
 import { completeTaskRun, failTaskRun, loadRunInput } from "@/lib/task-runs";
 import { generateSpecPayloadSchema, type GenerateSpecPayload } from "@/types/tasks";
@@ -85,6 +85,7 @@ function describeContext(payload: GenerateSpecPayload) {
   const summary = formatDesignContext({ ...EMPTY_DESIGN_CONTEXT, ...payload.designContext });
   return [
     ...describeCanvasAndChat(payload),
+    ...repositoryInstruction(payload.repositoryUrl),
     ...(summary
       ? ["", `Design context: ${summary}. Weigh each decision and its alternatives against this context.`]
       : []),

@@ -5,7 +5,7 @@ import { inngest, specRequested } from "@/inngest/client";
 
 import { EMPTY_DESIGN_CONTEXT } from "@/lib/design-context";
 import { buildSpecContextSections } from "@/lib/design-context-prompts";
-import { describeCanvasAndChat, unwrapFence } from "@/lib/document-prompt";
+import { describeCanvasAndChat, repositoryInstruction, unwrapFence } from "@/lib/document-prompt";
 import { saveProjectDocument } from "@/lib/project-spec-store";
 import { completeTaskRun, failTaskRun, loadRunInput } from "@/lib/task-runs";
 import { generateSpecPayloadSchema, type GenerateSpecPayload } from "@/types/tasks";
@@ -74,5 +74,9 @@ export const generateSpec = inngest.createFunction(
 function describeContext(payload: GenerateSpecPayload) {
   // Fields the payload omits count as not set; "" when no context is set.
   const contextSections = buildSpecContextSections({ ...EMPTY_DESIGN_CONTEXT, ...payload.designContext });
-  return [...describeCanvasAndChat(payload), ...(contextSections ? ["", contextSections] : [])].join("\n");
+  return [
+    ...describeCanvasAndChat(payload),
+    ...repositoryInstruction(payload.repositoryUrl),
+    ...(contextSections ? ["", contextSections] : []),
+  ].join("\n");
 }

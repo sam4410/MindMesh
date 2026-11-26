@@ -6,7 +6,7 @@ Update this file whenever the current phase, active feature, or implementation s
 - Commercial roadmap, Phase 2 (Segmentation and ease of use). Features 40–43 and 68–71 complete; 34–39 deferred.
 
 ## Current Goal
-- Feature 62: Jira Issues from Design
+- Feature 64: Cost Estimate Task
 
 ## Completed
 
@@ -1022,14 +1022,56 @@ Update this file whenever the current phase, active feature, or implementation s
     - The project's Liveblocks room holds `jiraIssue` on exactly those 3 nodes, with `https://{site}.atlassian.net/browse/KAN-n` URLs, the form the badge accepts.
   - **Not tested:** the failure path with a real bad key, a second collaborator watching the badge appear, and the feature on Vercel. It isn't committed yet.
 
+- Feature 63: GitHub Repository Link (2026-11-26; tested 2026-11-27).
+  - Schema: `repositoryUrl String?` on `Project`.
+    - Migration `20261126143744_add_project_repository_url` (one nullable column). Applied to local `ghost_ai` with `prisma migrate dev`, and to production Prisma Postgres with `prisma migrate deploy` on 2026-11-26 (status: up to date, 14 migrations).
+    - `getAccessibleProject` selects the new column, so the migration had to reach production before this code deploys; otherwise every project route would fail.
+  - `lib/project-repository.ts`:
+    - `normalizeRepositoryUrl` accepts only `https://github.com/{owner}/{repo}` (letters, digits, `.`, `_`, `-`), drops a trailing `.git` or `/`, and rejects owners or repos made only of dots. `repositoryName` gives "owner/repo".
+    - `lib/project-repository.test.ts`: `node --import tsx --test lib/project-repository.test.ts`, 2/2 pass. Accepted cases: plain, `.git`, a trailing slash, and a repo name starting with "git". Rejected (12): no scheme, `http`, GitLab, a lookalike host, owner only, a deeper path, a query string, `..` as repo or owner, a space, and `javascript:`.
+  - `lib/project-input.ts`: `readProjectInput` reads `repositoryUrl`.
+    - Missing leaves it unchanged; `null` or blank clears it.
+    - Anything else must normalize (at most 300 characters), or it's 400 "repositoryUrl must look like https://github.com/owner/repo".
+    - Checked directly: `.git` stripped, `null` and blank clear, GitLab and a number rejected, a design-context-only body leaves it out.
+  - `PATCH /api/projects/[projectId]`:
+    - accepts `repositoryUrl`; setting or clearing it needs the owner or an admin (`requireProjectManager`, as for rename), while design context alone still needs only access;
+    - the "required" error now names all three fields.
+  - Workspace data: `getAccessibleProject` and `ProjectSummary` (`lib/projects.ts`) include `repositoryUrl`.
+  - UI:
+    - The Design context dialog has a "Repository" field under the context selects. It's editable by owners and admins; others see it disabled with "Only the project owner or an admin can change the repository."
+    - Save sends `repositoryUrl` (blank becomes `null`) only for owners and admins, and shows the API's error. The saved value is the server's normalized URL, kept in `EditorShell` (`savedRepository`, as `savedContext`) until the server props refresh.
+    - The navbar shows GitHub's mark (an inline Octicons SVG, since lucide has no brand icons) right of the context chips when a link is set. It's a separate link outside the chips button, opening in a new tab with `rel="noopener noreferrer"`, with an aria-label and title naming "owner/repo".
+  - Documents:
+    - `POST /api/ai/spec` and `POST /api/ai/adr` pass the project's `repositoryUrl` in the run payload (`generateSpecPayloadSchema`: optional and nullable, at most 300 characters).
+    - Both prompts add, through `repositoryInstruction` in `lib/document-prompt.ts`: "Directly under the title, before any other line, add this line exactly: Repository: {url}". Nothing changes for projects without a link.
+  - TypeScript, ESLint and `npm run build` clean.
+  - Tested 2026-11-27:
+    - In the browser by the user, on the "Chat Application Design" project (Azure):
+      - Setting `https://github.com/sam4410/MindMesh` shows the GitHub mark beside the chips, linking to the repository.
+      - The dialog shows the saved URL normalized.
+      - `https://gitlab.com/a/b` is refused with the API's message.
+      - Clearing the field removes the mark.
+      - A generated spec has `Repository: https://github.com/sam4410/MindMesh` as the first line under its title.
+    - First, the user's dev server threw "Unknown field `repositoryUrl`" on the workspace page. It had started before the schema change, and `lib/prisma.ts` keeps one Prisma client across hot reloads. Restarting `npm run dev` fixed it. **Restart the dev server after any schema change.**
+    - Roles, without a second account:
+      - Ran a one-off script through the real `PATCH` handler, with `@clerk/nextjs/server` swapped for stand-in users (pre-loaded into `require.cache`), on two throwaway projects in the production database, deleted afterwards (0 left).
+      - 12/12 passed:
+        - Signed out: 401. No access: 404.
+        - Collaborator: setting or clearing the link is 403, and nothing is saved. Context plus link is 403 with nothing saved either. Context alone is 200 and keeps an existing link.
+        - Owner: `.git` is stripped on save, and a blank clears the link.
+        - Organization member: 403 for the link, 200 for context alone. Organization admin: 200.
+      - The disabled field for non-managers wasn't seen in a browser. It comes from the same `canManageProject` as the server rule.
+
+
 ## In Progress
 
-- Feature 62: Jira Issues from Design, tested on a real Jira site. Still to do: commit, push and merge.
+- Feature 63: GitHub Repository Link, tested 2026-11-27 (browser and spec run by the user, roles by script) and committed; production migration applied. Still to do: push and merge.
+- Feature 62: Jira Issues from Design, committed (`84e92b0`) and merged to `main` (PR #17, `b47a320`). Still to do: a check on the live site.
 - Inngest move: committed (`d00832f`), merged to `main` (PR #16) and live. Inngest Production synced `mindmesh` at `https://mindmesh-black.vercel.app/api/inngest` with all 8 functions, so the signing key works. Still to do: a design prompt on the live site to confirm the event key (the user's work machine blocks the site, so it waits for another device).
 - Feature 60: Atlassian Connection, tested. A real Atlassian Cloud site (a free Jira site) was connected from the local app on 2026-11-26, with a classic API token; scoped tokens don't work with site URLs, since Atlassian only accepts them through `api.atlassian.com`. The connection was saved to the production database, encrypted with the local `.env.local` key. Connecting on the live site failed with "Couldn't connect. Try again." because `INTEGRATIONS_ENCRYPTION_KEY` isn't set in Vercel, so the route crashed after verifying. The user set it in Vercel (Production and Preview) with the same value as `.env.local` on 2026-11-26; it applies after the next Production deployment.
 
 ## Next Up
-- Feature 63: GitHub Repository Link (`context/feature-specs/63-github-repository-link.md`)
+- Feature 64: Cost Estimate Task (`context/feature-specs/64-cost-estimate-task.md`)
 
 ## Roadmap
 
@@ -1084,8 +1126,8 @@ Billing and production hardening (specs 34–39) are deferred. The user decided 
 - 59 Decision record UI — Complete (billing parts deferred)
 - 60 Atlassian connection — Complete
 - 61 Confluence spec publish — Complete
-- 62 Jira issues from design — Complete (uncommitted)
-- 63 GitHub repository link — Not started
+- 62 Jira issues from design — Complete
+- 63 GitHub repository link — Complete
 
 ### Phase 5: Cost and infrastructure code
 - 64 Cost estimate task — Not started
