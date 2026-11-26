@@ -11,6 +11,8 @@ import { cn } from "@/lib/utils";
 import { DEFAULT_NODE_TEXT_COLOR, type CanvasEdge, type CanvasNode } from "@/types/canvas";
 
 const LABEL_PLACEHOLDER = "Add label";
+// Node data comes from any collaborator, so the badge links only to a Jira Cloud issue page.
+const JIRA_ISSUE_URL = /^https:\/\/[a-z0-9][a-z0-9-]*\.atlassian\.net\/browse\/[A-Z][A-Z0-9_]*-\d+$/;
 const HANDLE_POSITIONS = [Position.Top, Position.Right, Position.Bottom, Position.Left];
 
 export function CanvasNodeView({ id, data, selected }: NodeProps<CanvasNode>) {
@@ -22,6 +24,7 @@ export function CanvasNodeView({ id, data, selected }: NodeProps<CanvasNode>) {
   const isBoundary = data.shape === "boundary";
   const textColor = data.textColor ?? DEFAULT_NODE_TEXT_COLOR;
   const commentCount = use(CommentCountsContext).get(id) ?? 0;
+  const jiraIssue = data.jiraIssue && JIRA_ISSUE_URL.test(data.jiraIssue.url) ? data.jiraIssue : null;
 
   return (
     <div
@@ -106,6 +109,18 @@ export function CanvasNodeView({ id, data, selected }: NodeProps<CanvasNode>) {
       </div>
       {service && <ServiceBadge service={service} label={data.label} />}
       </div>
+      {jiraIssue && (
+        // Top left, clear of the comment badge; nodrag/nopan so clicking opens the issue.
+        <a
+          href={jiraIssue.url}
+          target="_blank"
+          rel="noreferrer"
+          title={`Open ${jiraIssue.key} in Jira`}
+          className="nodrag nopan absolute -top-2 -left-2 flex h-5 items-center rounded-full border border-surface-border bg-elevated px-1.5 text-[10px] font-semibold text-brand shadow hover:bg-subtle focus-visible:outline-2 focus-visible:outline-brand"
+        >
+          {jiraIssue.key}
+        </a>
+      )}
       {commentCount > 0 && (
         // comment-badge: left out of image exports.
         <span className="comment-badge pointer-events-none absolute -top-2 -right-2 flex h-5 items-center gap-0.5 rounded-full bg-brand px-1.5 text-[10px] font-semibold text-(--bg-base) shadow">

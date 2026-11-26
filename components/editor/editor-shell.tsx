@@ -17,6 +17,7 @@ import { AiActivityContext, NO_AI_ACTIVITY, type AiActivity } from "@/hooks/use-
 import { CanvasSaveContext, type CanvasSaveStatus } from "@/hooks/use-canvas-autosave";
 import { CanvasExportContext, type ExportCanvasImage } from "@/hooks/use-canvas-export";
 import { CanvasFocusContext, type FocusNodes } from "@/hooks/use-canvas-focus";
+import { CanvasJiraContext, type OpenJiraIssues } from "@/hooks/use-canvas-jira";
 import { CanvasImportContext, type ImportTemplate } from "@/hooks/use-canvas-import";
 import { useDesignRun, type DesignPromptOptions } from "@/hooks/use-design-run";
 import { ProjectActionsContext, useProjectActions } from "@/hooks/use-project-actions";
@@ -68,6 +69,8 @@ export function EditorShell({ ownedProjects, sharedProjects, children }: EditorS
   const exportImageRef = useRef<ExportCanvasImage | null>(null);
   // Filled by the canvas; the Review tab focuses a finding's nodes through it (hooks/use-canvas-focus.ts).
   const focusNodesRef = useRef<FocusNodes | null>(null);
+  // Filled by the canvas; the Export menu opens "Create Jira issues" through it (hooks/use-canvas-jira.ts).
+  const openJiraRef = useRef<OpenJiraIssues | null>(null);
   // Shown briefly under the Export button: an export failure, or "Copied".
   const [exportNotice, setExportNotice] = useState<ExportNotice | null>(null);
   const [saveStatus, setSaveStatus] = useState<CanvasSaveStatus>("idle");
@@ -188,6 +191,12 @@ export function EditorShell({ ownedProjects, sharedProjects, children }: EditorS
     const fileBaseName = `${toSlug(currentProject.name) || "canvas"}-diagram`;
     setExportNotice(null);
 
+    // Opens the canvas's "Create Jira issues" dialog with every component (spec 62).
+    if (action === "jira") {
+      openJiraRef.current?.();
+      return;
+    }
+
     if (action === "png" || action === "svg") {
       const exportCanvas = exportImageRef.current;
       if (!exportCanvas) return;
@@ -226,6 +235,7 @@ export function EditorShell({ ownedProjects, sharedProjects, children }: EditorS
     <CanvasImportContext value={importTemplateRef}>
     <CanvasExportContext value={exportImageRef}>
     <CanvasFocusContext value={focusNodesRef}>
+    <CanvasJiraContext value={openJiraRef}>
     <CanvasSaveContext value={canvasSave}>
     <AiActivityContext value={setAiActivity}>
     <AiChatContext value={aiChatValue}>
@@ -350,6 +360,7 @@ export function EditorShell({ ownedProjects, sharedProjects, children }: EditorS
     </AiChatContext>
     </AiActivityContext>
     </CanvasSaveContext>
+    </CanvasJiraContext>
     </CanvasFocusContext>
     </CanvasExportContext>
     </CanvasImportContext>

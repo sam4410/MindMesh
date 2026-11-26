@@ -40,6 +40,9 @@ export type CanvasNodeData = {
   // Managed cloud service ID from lib/cloud-services.ts (e.g. "azure.cosmos-db"). Optional so
   // user-drawn nodes and templates without it stay valid.
   service?: string;
+  // The Jira issue created for this component (spec 62); written by any collaborator, so the
+  // badge only links to an https Atlassian issue URL.
+  jiraIssue?: { key: string; url: string };
 };
 
 export type CanvasNode = Node<CanvasNodeData, "canvasNode">;

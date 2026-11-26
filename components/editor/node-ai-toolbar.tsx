@@ -1,5 +1,5 @@
 import { NodeToolbar, Position } from "@xyflow/react";
-import { Cloud, Copy, MessageCircle, MessageSquare, TrendingUp, type LucideIcon } from "lucide-react";
+import { Cloud, Copy, MessageCircle, MessageSquare, Ticket, TrendingUp, type LucideIcon } from "lucide-react";
 import { useRef, useState } from "react";
 
 import { NodeComments } from "@/components/editor/node-comments";
@@ -41,12 +41,14 @@ interface NodeAiToolbarProps {
   nodes: CanvasNode[];
   // A design run is active in the room.
   disabled: boolean;
+  // Opens "Create Jira issues" for the selected components (spec 62).
+  onCreateJiraIssues: (nodeIds: string[]) => void;
 }
 
 // Actions for the selection, below it so it doesn't cover the color toolbar above a single
-// selected node: AI actions (spec 48) about the selected nodes only, and Comment (spec 54) for a
-// single node.
-export function NodeAiToolbar({ nodes, disabled }: NodeAiToolbarProps) {
+// selected node: AI actions (spec 48) about the selected nodes only, Comment (spec 54) for a
+// single node, and Jira issues (spec 62) for the selected components.
+export function NodeAiToolbar({ nodes, disabled, onCreateJiraIssues }: NodeAiToolbarProps) {
   const { sendDesignPrompt, openAiPrompt, isDesignBusy } = useAiPromptActions();
   // The node whose comments are open; they close when the selection changes.
   const [commentsNodeId, setCommentsNodeId] = useState<string | null>(null);
@@ -58,6 +60,8 @@ export function NodeAiToolbar({ nodes, disabled }: NodeAiToolbarProps) {
   const ids = nodes.map((node) => node.id);
   const labels = formatLabels(nodes);
   const tooMany = nodes.length > MAX_FOCUS_NODES;
+  // Boundaries are zones, not components, so a selection of only boundaries has nothing to file.
+  const hasComponents = nodes.some((node) => node.data.shape !== "boundary");
   // isDesignBusy also covers this browser's send before the run's AI presence appears.
   const isWorking = disabled || isDesignBusy;
   const isDisabled = isWorking || tooMany;
@@ -119,6 +123,21 @@ export function NodeAiToolbar({ nodes, disabled }: NodeAiToolbarProps) {
             >
               <MessageCircle aria-hidden className="h-3.5 w-3.5" />
               Comment
+            </button>
+          </>
+        )}
+        {hasComponents && (
+          <>
+            <span aria-hidden className="mx-0.5 h-4 w-px bg-surface-border" />
+            {/* Not tied to the AI's state either. */}
+            <button
+              type="button"
+              aria-haspopup="dialog"
+              onClick={() => onCreateJiraIssues(ids)}
+              className={BUTTON_CLASS}
+            >
+              <Ticket aria-hidden className="h-3.5 w-3.5" />
+              Jira issues
             </button>
           </>
         )}

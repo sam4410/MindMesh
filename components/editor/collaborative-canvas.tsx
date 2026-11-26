@@ -48,6 +48,7 @@ import { CanvasControls } from "@/components/editor/canvas-controls";
 import { CanvasEdgeView } from "@/components/editor/canvas-edge";
 import { CanvasNodeView } from "@/components/editor/canvas-node";
 import { LiveCursors } from "@/components/editor/live-cursors";
+import { JiraIssuesDialog, jiraComponents, type JiraComponent } from "@/components/editor/jira-issues-dialog";
 import { CommentCountsContext } from "@/components/editor/node-comments";
 import { NodeAiToolbar } from "@/components/editor/node-ai-toolbar";
 import { OnboardingTour } from "@/components/editor/onboarding-tour";
@@ -61,6 +62,7 @@ import { useCanvasAutosave, type CanvasLoadState } from "@/hooks/use-canvas-auto
 import { useRegisterCanvasExport } from "@/hooks/use-canvas-export";
 import { useRegisterCanvasFocus } from "@/hooks/use-canvas-focus";
 import { useRegisterCanvasImport } from "@/hooks/use-canvas-import";
+import { useRegisterCanvasJira } from "@/hooks/use-canvas-jira";
 import { ZOOM_ANIMATION, isEditableTarget, useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
 import type { CanvasSnapshot } from "@/lib/canvas-snapshot";
 import {
@@ -187,6 +189,8 @@ function Canvas() {
   const [drewWhileLoading, setDrewWhileLoading] = useState(false);
   // Bumped by "Show tour" in the user menu.
   const [tourReplay, setTourReplay] = useState(0);
+  // The components the "Create Jira issues" dialog offers (spec 62), taken when it opens.
+  const [jiraDialogComponents, setJiraDialogComponents] = useState<JiraComponent[] | null>(null);
   // One subscription for the whole canvas; nodes read their unresolved count from context.
   // Threads on deleted nodes stay in Liveblocks but no node shows them.
   const { threads } = useThreads();
@@ -274,6 +278,17 @@ function Canvas() {
   useRegisterCanvasExport((format, fileBaseName) =>
     exportCanvasImage(format, reactFlow.getNodes(), fileBaseName)
   );
+  // "Create Jira issues" (spec 62): the selection from the node toolbar, or every component from
+  // the Export menu.
+  const openJiraIssues = (nodeIds?: string[]) => setJiraDialogComponents(jiraComponents(flowNodes, flowEdges, nodeIds));
+  useRegisterCanvasJira(() => openJiraIssues());
+  // Through React Flow's updateNodeData, so the issue keys sync to everyone via Liveblocks; one
+  // batch, so one undo removes them all.
+  function linkJiraIssues(created: { nodeId: string; key: string; url: string }[]) {
+    room.batch(() => {
+      for (const { nodeId, key, url } of created) reactFlow.updateNodeData(nodeId, { jiraIssue: { key, url } });
+    });
+  }
   // A review finding (spec 53) selects its nodes and zooms to them. Selection is local to this
   // browser, like a click; nodes deleted since the review are skipped.
   useRegisterCanvasFocus((ids) => {
@@ -406,12 +421,24 @@ function Canvas() {
         <CanvasControls onUndo={undo} onRedo={redo} />
         <ShapePanel onCreateShape={handleCreateShape} />
         {/* Disabled while any design run is active in the room. */}
-        <NodeAiToolbar nodes={flowNodes.filter((node) => node.selected)} disabled={isAiActive} />
+        <NodeAiToolbar
+          nodes={flowNodes.filter((node) => node.selected)}
+          disabled={isAiActive}
+          onCreateJiraIssues={openJiraIssues}
+        />
       </ReactFlow>
     </div>
     {/* Outside the canvas div, so its keys don't reach the canvas's handlers. Waits for the
         canvas to load, so it doesn't open over the loading state. */}
     {loadState === "ready" && <OnboardingTour replay={tourReplay} returnFocusRef={canvasRef} />}
+    {jiraDialogComponents && (
+      <JiraIssuesDialog
+        projectId={room.id}
+        components={jiraDialogComponents}
+        onCreated={linkJiraIssues}
+        onClose={() => setJiraDialogComponents(null)}
+      />
+    )}
     </CommentCountsContext>
   );
 }
