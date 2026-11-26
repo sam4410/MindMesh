@@ -34,6 +34,7 @@ export async function POST(req: Request) {
         nodes,
         edges,
         designContext: getDesignContext(project),
+        repositoryUrl: project.repositoryUrl,
       },
     });
   } catch (err) {

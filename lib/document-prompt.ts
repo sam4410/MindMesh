@@ -49,6 +49,13 @@ export function describeCanvasAndChat({ nodes, edges, chatHistory }: Pick<Genera
   ];
 }
 
+// The "Repository: {url}" line under the document's title (spec 63); nothing when there's no link.
+export function repositoryInstruction(repositoryUrl: string | null | undefined) {
+  return repositoryUrl
+    ? ["", `Repository: ${repositoryUrl}`, `Directly under the title, before any other line, add this line exactly: Repository: ${repositoryUrl}`]
+    : [];
+}
+
 // Models sometimes wrap the whole answer in a ```markdown fence despite the instructions.
 export function unwrapFence(text: string) {
   const trimmed = text.trim();

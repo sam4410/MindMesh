@@ -22,8 +22,8 @@ async function deleteBlobFolder(prefix: string) {
   } while (cursor);
 }
 
-// Renames (owner or admin only) and/or updates the design context (anyone with access: it
-// describes the design, not project management).
+// Renames and/or sets the repository link (owner or admin only), and/or updates the design context
+// (anyone with access: it describes the design, not project management).
 export async function PATCH(req: Request, ctx: Context) {
   const { projectId } = await ctx.params;
   const identity = await getCurrentIdentity();
@@ -31,11 +31,12 @@ export async function PATCH(req: Request, ctx: Context) {
 
   const input = await readProjectInput(req);
   if ("error" in input) return Response.json({ error: input.error }, { status: 400 });
-  if (!input.name && !input.designContext) {
-    return Response.json({ error: "name or designContext is required" }, { status: 400 });
+  const changesRepository = input.repositoryUrl !== undefined;
+  if (!input.name && !input.designContext && !changesRepository) {
+    return Response.json({ error: "name, designContext or repositoryUrl is required" }, { status: 400 });
   }
 
-  if (input.name) {
+  if (input.name || changesRepository) {
     const denied = await requireProjectManager(projectId);
     if (denied) return denied;
   } else if (!(await getAccessibleProject(projectId, identity))) {
@@ -44,7 +45,11 @@ export async function PATCH(req: Request, ctx: Context) {
 
   const project = await prisma.project.update({
     where: { id: projectId },
-    data: { name: input.name, ...input.designContext },
+    data: {
+      name: input.name,
+      ...input.designContext,
+      ...(changesRepository && { repositoryUrl: input.repositoryUrl }),
+    },
   });
   return Response.json(project);
 }

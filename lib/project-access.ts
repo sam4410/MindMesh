@@ -60,6 +60,8 @@ export async function getAccessibleProject(
       architectureStyle: true,
       industry: true,
       projectType: true,
+      // GitHub link (spec 63), passed to spec and ADR generation.
+      repositoryUrl: true,
     },
   });
 }

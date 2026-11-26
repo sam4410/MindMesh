@@ -51,6 +51,8 @@ export function EditorShell({ ownedProjects, sharedProjects, children }: EditorS
   const [savedContext, setSavedContext] = useState<{ projectId: string; value: DesignContext } | null>(
     null
   );
+  // Like savedContext: the repository link saved in this session wins until the server props refresh.
+  const [savedRepository, setSavedRepository] = useState<{ projectId: string; value: string | null } | null>(null);
   // An approval change made here, shown until the refreshed server props catch up (they win once
   // their status differs from the one the change started from).
   const [savedApproval, setSavedApproval] = useState<{
@@ -123,6 +125,10 @@ export function EditorShell({ ownedProjects, sharedProjects, children }: EditorS
     savedContext && savedContext.projectId === currentProject?.id
       ? savedContext.value
       : (currentProject?.designContext ?? EMPTY_DESIGN_CONTEXT);
+  const currentRepository =
+    savedRepository && savedRepository.projectId === currentProject?.id
+      ? savedRepository.value
+      : (currentProject?.repositoryUrl ?? null);
   const sendChat: SendChatMessage = async (content, role) => {
     const send = sendChatRef.current;
     if (!send) throw new Error("The canvas room isn't connected");
@@ -261,6 +267,7 @@ export function EditorShell({ ownedProjects, sharedProjects, children }: EditorS
             setIsHistoryOpen(true);
           }}
           designContext={currentProject?.designContext}
+          repositoryUrl={currentRepository}
           approval={currentApproval}
           approvalRole={currentProject?.role}
           onChangeApproval={(status) => void changeApproval(status)}
@@ -300,6 +307,7 @@ export function EditorShell({ ownedProjects, sharedProjects, children }: EditorS
               getCanvas={() => canvasRef.current}
               designContext={currentContext}
               hasNodes={canvasHasNodes}
+              projectName={currentProject.name}
             />
           )}
         </div>
@@ -319,9 +327,15 @@ export function EditorShell({ ownedProjects, sharedProjects, children }: EditorS
           key={`${currentProject.id}-${contextOpenCount}`}
           projectId={currentProject.id}
           value={currentContext}
+          repositoryUrl={currentRepository}
+          // UI hint only; PATCH /api/projects/[projectId] enforces the role.
+          canEditRepository={canManageProject(currentProject.role)}
           open={isContextOpen}
           onOpenChange={setIsContextOpen}
-          onSaved={(value) => setSavedContext({ projectId: currentProject.id, value })}
+          onSaved={(value, repositoryUrl) => {
+            setSavedContext({ projectId: currentProject.id, value });
+            setSavedRepository({ projectId: currentProject.id, value: repositoryUrl });
+          }}
         />
       )}
       {currentProject && (

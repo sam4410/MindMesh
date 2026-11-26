@@ -4,7 +4,14 @@ import { NonRetriableError } from "inngest";
 import type { z } from "zod";
 
 import type { Prisma } from "@/app/generated/prisma/client";
-import { adrRequested, designRequested, inngest, reviewRequested, specRequested } from "@/inngest/client";
+import {
+  adrRequested,
+  costRequested,
+  designRequested,
+  inngest,
+  reviewRequested,
+  specRequested,
+} from "@/inngest/client";
 import type { RunState } from "@/lib/ai-status";
 import { prisma } from "@/lib/prisma";
 
@@ -15,7 +22,12 @@ const STALE_AFTER_MS = 15 * 60_000;
 // Records the run with its payload, then sends the event that starts it. Returns the run ID.
 // The row comes first, so a fast function always finds its input.
 export async function startTaskRun(
-  event: typeof designRequested | typeof specRequested | typeof adrRequested | typeof reviewRequested,
+  event:
+    | typeof designRequested
+    | typeof specRequested
+    | typeof adrRequested
+    | typeof reviewRequested
+    | typeof costRequested,
   { projectId, userId, input }: { projectId: string; userId: string; input: Prisma.InputJsonValue }
 ) {
   const runId = randomUUID();

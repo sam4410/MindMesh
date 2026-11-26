@@ -1,9 +1,10 @@
 "use client";
 
 import { useAuth } from "@clerk/nextjs";
-import { Bot, Loader2, SendHorizontal, X } from "lucide-react";
+import { Bot, CircleDollarSign, ClipboardCheck, FileText, Loader2, SendHorizontal, X } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 
+import { CostTab } from "@/components/editor/cost-tab";
 import { ReviewTab } from "@/components/editor/review-tab";
 import { SpecsTab } from "@/components/editor/specs-tab";
 import { Button } from "@/components/ui/button";
@@ -27,8 +28,10 @@ const CHIP_CLASS =
 // The spec's "accent" is the AI accent (indigo) here; the project's own `accent` utility is a
 // shadcn surface color. Inactive tabs already use the muted text token; `!` beats tabs.tsx's
 // dark: and hover: text/bg defaults so the active tab keeps the accent while hovered.
+// Four tabs share the sidebar's width, so they use small text, tight spacing and small icons.
 const TAB_TRIGGER =
-  "rounded-lg data-active:border-transparent! data-active:bg-ai/15! data-active:text-ai-text!";
+  "gap-1 rounded-lg px-1 text-xs data-active:border-transparent! data-active:bg-ai/15! data-active:text-ai-text!";
+const TAB_ICON = "size-3.5";
 
 // Hours and minutes in the viewer's locale, e.g. "3:42 PM".
 const TIME_FORMAT = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
@@ -73,6 +76,8 @@ interface AiSidebarProps {
   // The project's design context and whether the canvas has nodes; together they pick the prompt suggestions.
   designContext: DesignContext;
   hasNodes: boolean;
+  // For file names, e.g. the cost estimate CSV.
+  projectName: string;
 }
 
 export function AiSidebar({
@@ -86,6 +91,7 @@ export function AiSidebar({
   getCanvas,
   designContext,
   hasNodes,
+  projectName,
 }: AiSidebarProps) {
   const [tab, setTab] = useState("architect");
   // A new draft from the node toolbar brings the architect tab forward (adjusted during render).
@@ -122,13 +128,20 @@ export function AiSidebar({
       <Tabs value={tab} onValueChange={(value) => setTab(String(value))} className="min-h-0 flex-1 gap-0">
         <TabsList className="mx-4 mt-3 w-auto bg-subtle">
           <TabsTrigger value="architect" className={TAB_TRIGGER}>
-            AI Architect
+            <Bot aria-hidden className={TAB_ICON} />
+            Architect
           </TabsTrigger>
           <TabsTrigger value="specs" className={TAB_TRIGGER}>
+            <FileText aria-hidden className={TAB_ICON} />
             Specs
           </TabsTrigger>
           <TabsTrigger value="review" className={TAB_TRIGGER}>
+            <ClipboardCheck aria-hidden className={TAB_ICON} />
             Review
+          </TabsTrigger>
+          <TabsTrigger value="cost" className={TAB_TRIGGER}>
+            <CircleDollarSign aria-hidden className={TAB_ICON} />
+            Cost
           </TabsTrigger>
         </TabsList>
         {/* keepMounted so a half-typed prompt survives switching tabs. */}
@@ -154,6 +167,16 @@ export function AiSidebar({
         {/* keepMounted like Specs, so a running review keeps its subscription and the result stays. */}
         <TabsContent value="review" keepMounted className="flex min-h-0 flex-col">
           <ReviewTab projectId={projectId} isActive={tab === "review"} getCanvas={getCanvas} />
+        </TabsContent>
+        {/* keepMounted like Review, so a running estimate keeps polling and the result stays. */}
+        <TabsContent value="cost" keepMounted className="flex min-h-0 flex-col">
+          <CostTab
+            projectId={projectId}
+            isActive={tab === "cost"}
+            getCanvas={getCanvas}
+            designContext={designContext}
+            projectName={projectName}
+          />
         </TabsContent>
       </Tabs>
     </aside>

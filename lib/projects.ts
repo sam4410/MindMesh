@@ -10,6 +10,8 @@ export interface ProjectSummary extends ApprovalState {
   deletionPending: boolean;
   role: ProjectRole;
   designContext: DesignContext;
+  // https://github.com/{owner}/{repo}, or null (spec 63).
+  repositoryUrl: string | null;
 }
 
 const select = {
@@ -22,6 +24,7 @@ const select = {
   architectureStyle: true,
   industry: true,
   projectType: true,
+  repositoryUrl: true,
   approvalStatus: true,
   approvedByName: true,
   approvedAt: true,
@@ -58,6 +61,7 @@ export async function getProjectsForUser(identity: Identity) {
     deletionPending: project.deletionPending,
     role: getProjectRole(project, identity),
     designContext: getDesignContext(project),
+    repositoryUrl: project.repositoryUrl,
     approvalStatus: project.approvalStatus,
     approvedByName: project.approvedByName,
     approvedAt: project.approvedAt?.toISOString() ?? null,
