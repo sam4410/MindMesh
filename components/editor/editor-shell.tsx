@@ -307,6 +307,7 @@ export function EditorShell({ ownedProjects, sharedProjects, children }: EditorS
               getCanvas={() => canvasRef.current}
               designContext={currentContext}
               hasNodes={canvasHasNodes}
+              projectName={currentProject.name}
             />
           )}
         </div>

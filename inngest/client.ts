@@ -16,3 +16,4 @@ export const designRequested = eventType("ai/design.requested", { schema: static
 export const specRequested = eventType("ai/spec.requested", { schema: staticSchema<RunEvent>() });
 export const adrRequested = eventType("ai/adr.requested", { schema: staticSchema<RunEvent>() });
 export const reviewRequested = eventType("ai/review.requested", { schema: staticSchema<RunEvent>() });
+export const costRequested = eventType("ai/cost.requested", { schema: staticSchema<RunEvent>() });

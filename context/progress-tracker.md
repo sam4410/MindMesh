@@ -6,7 +6,7 @@ Update this file whenever the current phase, active feature, or implementation s
 - Commercial roadmap, Phase 2 (Segmentation and ease of use). Features 40–43 and 68–71 complete; 34–39 deferred.
 
 ## Current Goal
-- Feature 64: Cost Estimate Task
+- Feature 66: IaC Generation Task
 
 ## Completed
 
@@ -1062,16 +1062,99 @@ Update this file whenever the current phase, active feature, or implementation s
         - Organization member: 403 for the link, 200 for context alone. Organization admin: 200.
       - The disabled field for non-managers wasn't seen in a browser. It comes from the same `canManageProject` as the server rule.
 
+- Feature 64: Cost Estimate Task (2026-11-26; tested 2026-11-27).
+  - Built on Inngest rather than Trigger.dev, as the spec says (the move was on 2026-11-25):
+    - `inngest/estimate-cost.ts` instead of `trigger/estimate-cost.ts`. Function `estimate-cost`, on event `ai/cost.requested` (`inngest/client.ts`), registered in `app/api/inngest/route.ts`, and added to `startTaskRun`'s event types.
+    - `NonRetriableError` stands in for `AbortTaskRunError`. The run's status is its `TaskRun` row, as for the other functions: `completeTaskRun`, and `failTaskRun` in `onFailure`.
+    - No `POST /api/ai/cost/token`. Since the move, the browser polls `GET /api/ai/runs/[runId]` for every run, so it reads the estimate from the run's output.
+  - Billing deferred, per the spec:
+    - No usage check, no `costRunsPerMonth`.
+    - No `COST` `TaskRunKind` and no `add_cost_task_kind` migration, since `TaskRun` has no kind column. So there's **no migration** for this feature.
+  - `types/tasks.ts`:
+    - `costAssumptionsSchema`: `trafficTier` small, medium or large; `region` trimmed, 1–40 characters.
+    - `costRequestSchema` and `costPayloadSchema`: the review's canvas schemas plus `assumptions`.
+    - `costEstimateSchema`, OpenAI-strict: `currency` "USD", `lineItems` (nodeId, service, tier, monthlyLow, monthlyHigh, assumption; prices at least 0), `unpricedNodeIds`, `totalLow`, `totalHigh`, `caveats`.
+  - Task:
+    - Loads the payload from the run row. Throws `NonRetriableError("Choose a cloud provider to estimate costs")` unless the payload's provider is aws, azure or gcp.
+    - Model: OpenAI `gpt-6-luna` (the review's model) with `Output.object`, a 120 s timeout, and `retries: 0`, since a retry bills the model again.
+    - Prompt input: the provider, the region, and the traffic tier with its size (small: about 10k requests/day and under 50 GB; medium: about 1M and under 1 TB; large: about 50M and under 20 TB). Then the project context; the components, each with `[id]`, name, shape and the managed service named by its `service` ID; and the edges.
+    - Prompt rules: on-demand list prices for the region; no discounts, free tiers, savings plans, or reserved or committed-use pricing; a low–high range per component, with the sizing stated in `assumption`.
+    - Boundaries aren't listed or priced: they're zones, not components.
+    - Logs counts and totals only.
+  - `lib/cost-estimate.ts`:
+    - `finalizeCostEstimate` drops line items and unpriced IDs for anything that isn't a component on the canvas (boundary IDs included). Unpriced IDs that also have a line item, and repeats, go too.
+    - It swaps a reversed low/high, rounds to cents, and recomputes `totalLow` and `totalHigh` from the line items.
+    - `isPricedProvider` is shared by the route and the task.
+  - `lib/cost-estimate.test.ts`: `node --import tsx --test lib/cost-estimate.test.ts`, 3/3 pass.
+  - `POST /api/ai/cost` mirrors the review route. It returns:
+    - 401 without a user, 400 on a bad body, 404 when the project isn't accessible;
+    - 400 "Choose a cloud provider to estimate costs" when the project's provider isn't AWS, Azure or GCP, before any run starts;
+    - 502 when the event can't be sent; otherwise 202 `{ runId }`.
+    - Estimates aren't persisted anywhere but the run's output.
+  - Checked:
+    - TypeScript, ESLint, and `npm run build` (which lists `/api/ai/cost`).
+    - An unauthenticated POST gets 401.
+    - The local Inngest dev server registers `mindmesh-estimate-cost`: the app now serves 10 functions counting failure handlers, up from 8.
+  - Tested 2026-11-27:
+    - A real estimate by the user, from the Cost tab (Feature 65), on "Chat Application Design" (Azure, medium traffic, `eastus`):
+      - 16 line items, 1 unpriced component (Chat Client), and caveats.
+      - Totals of $6,839–$7,870, equal to the sums of the line items (checked against the CSV).
+    - The no-provider 400, by a one-off script through the real `POST /api/ai/cost`:
+      - A stand-in signed-in user, on throwaway projects whose provider was unset, `on-prem` or `agnostic`, deleted afterwards (0 left).
+      - Each got 400 "Choose a cloud provider to estimate costs", and no run started.
+      - A bad body got a different 400, showing the handler ran.
+  - Follow-up (not done): the model priced Identity (Entra ID) as 1,000 P1 licences, a flat $6,000 a month, most of the total. A caveat says so. If that misleads, the prompt could exclude per-user licences or ask for them separately.
+  - Production: no migration. After deploying, check that Inngest Cloud lists 10 functions for `mindmesh`; resync the app from the Inngest dashboard if it still shows 8.
+
+- Feature 65: Cost Estimate UI (2026-11-26; tested 2026-11-27).
+  - Differences from the spec, all because of the move to Inngest:
+    - No token and no `useRealtimeRun`. "Estimate cost" posts to `/api/ai/cost` and follows the run with `RunPoller` (`GET /api/ai/runs/[runId]` every 2 s), like the Review tab.
+    - `skipColumns: ["payload"]` has no equivalent: the run state never includes the payload.
+  - `components/editor/ai-sidebar.tsx`:
+    - A fourth tab, "Cost", after Review, kept mounted.
+    - All four tabs got short labels and icons: Architect (was "AI Architect", `Bot`), Specs (`FileText`), Review (`ClipboardCheck`), Cost (`CircleDollarSign`). They use `text-xs`, `gap-1`, `px-1` and 14 px icons.
+    - Measured in the local app's CSS with Geist at 12 px: the four tabs fill the 286 px list without overflow, with about 1 px to spare on "Architect".
+    - `AiSidebar` takes `projectName`, which `EditorShell` passes, for the CSV file name.
+  - `components/editor/cost-tab.tsx`:
+    - Props `{ projectId, isActive, getCanvas, designContext }` per the spec, plus `projectName` for the CSV. `isActive` is unused, as in the Review tab.
+    - Without an AWS, Azure or GCP provider, the tab shows "Set a cloud provider in Design context to estimate costs" instead of the form and any result. A run already started keeps polling.
+    - Form: a Traffic select (Small, Medium, Large), with the selected tier's spec 64 numbers as help text below. The numbers are repeated from the task's prompt, since the spec says not to change the task.
+    - Form: a Region input (at most 40 characters) defaulting to `us-east-1`, `eastus` or `us-central1`. The default follows the provider until the user edits it.
+    - Button: "Estimate cost", with a spinner and "Estimating…" while running.
+    - Errors get the generic "Couldn't start the estimate. Try again." The 402 upgrade message is skipped, since billing is deferred.
+    - Node labels are captured when the estimate starts, so rows keep their names if the canvas changes. Unlabeled nodes read "Unlabeled {shape}".
+  - Result:
+    - A table with Component (node label), Service, Tier and Monthly ("$120 – $340").
+    - Amounts are whole dollars, except cents for amounts under $10 that aren't whole ("$0.40").
+    - The total range in bold in the footer, then the fixed note "Rough list-price estimate, not a quote."
+    - "Not priced" components as chips, then the caveats as a list.
+    - A footer naming the time, tier and region, and saying estimates aren't saved.
+    - Clicking a row calls `focusNodes([nodeId])`. A button in the first cell gives keyboard users the same action. When the node is gone, the tab says "That component is no longer on the canvas."
+  - CSV, `lib/exporters/cost-csv.ts` `toCostCsv`, downloaded as `${toSlug(projectName) || "project"}-cost-estimate.csv`:
+    - Columns: Component, Service, Tier, Monthly low (USD), Monthly high (USD); the range is two numeric columns so spreadsheets can sum them. Then a Total row.
+    - Fields with commas, quotes or line breaks are quoted (RFC 4180).
+    - Text starting with `=`, `+`, `-` or `@` gets a leading apostrophe, against spreadsheet formula injection.
+    - The file starts with a UTF-8 byte order mark for Excel.
+  - `lib/exporters/cost-csv.test.ts`: 1/1 pass; with the Feature 64 and exporter tests, 10/10.
+  - TypeScript, ESLint and `npm run build` clean.
+  - Tested 2026-11-27 by the user, in the local app:
+    - The four tabs fit the sidebar.
+    - The estimate shows its table, bold total, the note, the "Not priced" chip and the caveats.
+    - Clicking a row focused its node (Audit Store).
+    - The CSV opened in Excel. "Hot, locally redundant storage" stayed in one cell, and the Total row matched the tab.
+    - With the cloud provider set to "Not set", the tab shows the guidance.
+  - Follow-up (not done): in the 288 px table, the narrow Service and Tier columns break words mid-word ("Standar d", "Consum ption"), from `break-words` in a fixed-layout table. Wider text columns, or service and tier stacked in one cell, would fix it.
 
 ## In Progress
 
-- Feature 63: GitHub Repository Link, tested 2026-11-27 (browser and spec run by the user, roles by script) and committed; production migration applied. Still to do: push and merge.
+- Features 64 and 65: Cost Estimate Task and UI, tested 2026-11-27 and committed together; pushed to `dev` with Feature 63. Still to do: merge to `main`, then check that Inngest Cloud lists 10 functions for `mindmesh` (resync from the dashboard if it still shows 8).
+- Feature 63: GitHub Repository Link, tested 2026-11-27 (browser and spec run by the user, roles by script), committed (`be3cf72`) and pushed to `dev`; production migration applied. Still to do: merge to `main`.
 - Feature 62: Jira Issues from Design, committed (`84e92b0`) and merged to `main` (PR #17, `b47a320`). Still to do: a check on the live site.
 - Inngest move: committed (`d00832f`), merged to `main` (PR #16) and live. Inngest Production synced `mindmesh` at `https://mindmesh-black.vercel.app/api/inngest` with all 8 functions, so the signing key works. Still to do: a design prompt on the live site to confirm the event key (the user's work machine blocks the site, so it waits for another device).
 - Feature 60: Atlassian Connection, tested. A real Atlassian Cloud site (a free Jira site) was connected from the local app on 2026-11-26, with a classic API token; scoped tokens don't work with site URLs, since Atlassian only accepts them through `api.atlassian.com`. The connection was saved to the production database, encrypted with the local `.env.local` key. Connecting on the live site failed with "Couldn't connect. Try again." because `INTEGRATIONS_ENCRYPTION_KEY` isn't set in Vercel, so the route crashed after verifying. The user set it in Vercel (Production and Preview) with the same value as `.env.local` on 2026-11-26; it applies after the next Production deployment.
 
 ## Next Up
-- Feature 64: Cost Estimate Task (`context/feature-specs/64-cost-estimate-task.md`)
+- Feature 66: IaC Generation Task (`context/feature-specs/66-iac-generation-task.md`)
 
 ## Roadmap
 
@@ -1130,8 +1213,8 @@ Billing and production hardening (specs 34–39) are deferred. The user decided 
 - 63 GitHub repository link — Complete
 
 ### Phase 5: Cost and infrastructure code
-- 64 Cost estimate task — Not started
-- 65 Cost estimate UI — Not started
+- 64 Cost estimate task — Complete
+- 65 Cost estimate UI — Complete
 - 66 IaC generation task — Not started
 - 67 IaC download UI — Not started
 

@@ -150,3 +150,42 @@ export const reviewResultSchema = z.object({
 
 export type ReviewResult = z.infer<typeof reviewResultSchema>;
 
+// Rough monthly cost estimate (spec 64). The traffic tiers' sizes are spelled out in the task's prompt.
+export const COST_TRAFFIC_TIERS = ["small", "medium", "large"] as const;
+
+export const costAssumptionsSchema = z.object({
+  trafficTier: z.enum(COST_TRAFFIC_TIERS),
+  // The provider's region name, e.g. "westeurope" or "us-east-1"; it goes into the prompt as given.
+  region: z.string().trim().min(1).max(40),
+});
+
+export type CostAssumptions = z.infer<typeof costAssumptionsSchema>;
+
+// Same canvas input as the review, plus the sizing assumptions.
+export const costRequestSchema = reviewRequestSchema.extend({ assumptions: costAssumptionsSchema });
+
+// projectId and designContext come from the project the route resolved, as for the review.
+export const costPayloadSchema = reviewPayloadSchema.extend({ assumptions: costAssumptionsSchema });
+
+export type CostPayload = z.infer<typeof costPayloadSchema>;
+
+// The model's answer, for OpenAI's strict structured output like reviewResultSchema: no optional fields.
+export const costEstimateSchema = z.object({
+  currency: z.enum(["USD"]),
+  lineItems: z.array(
+    z.object({
+      nodeId: z.string().describe("ID of the canvas node (in square brackets in the node list)"),
+      service: z.string().describe("The billable service, e.g. Azure SQL Database"),
+      tier: z.string().describe("The SKU or tier priced, e.g. General Purpose, 2 vCores"),
+      monthlyLow: z.number().min(0),
+      monthlyHigh: z.number().min(0),
+      assumption: z.string().describe("The sizing behind the range: instance size, count, storage, requests, data transfer"),
+    })
+  ),
+  unpricedNodeIds: z.array(z.string()).describe("IDs of components that aren't billable cloud services, such as clients"),
+  totalLow: z.number(),
+  totalHigh: z.number(),
+  caveats: z.array(z.string()),
+});
+
+export type CostEstimate = z.infer<typeof costEstimateSchema>;
