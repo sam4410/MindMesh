@@ -1,0 +1,20 @@
+// The infrastructure-as-code language of a generated bundle (spec 66).
+enum IacFormat {
+  TERRAFORM
+  BICEP
+}
+
+// Metadata for a generated infrastructure-as-code zip; the zip itself lives in private Vercel Blob at
+// iac/{projectId}/{id}.zip.
+model IacBundle {
+  // uuid so the generate-iac function can choose the ID before uploading to the path that contains it.
+  id        String    @id @default(uuid())
+  projectId String
+  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  format    IacFormat
+  filePath  String // Vercel Blob URL of the zip
+  fileCount Int
+  createdAt DateTime  @default(now())
+
+  @@index([projectId, createdAt])
+}

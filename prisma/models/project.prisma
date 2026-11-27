@@ -37,6 +37,7 @@ model Project {
   taskRuns       TaskRun[]
   specs          ProjectSpec[]
   versions       ProjectVersion[]
+  iacBundles     IacBundle[]
 
   @@index([ownerId])
   @@index([organizationId])

@@ -30,6 +30,7 @@
     "class-variance-authority": "^0.7.1",
     "cn": "^0.5.1",
     "dotenv": "^18.0.9",
+    "fflate": "^0.8.3",
     "html-to-image": "^1.11.13",
     "inngest": "^4.27.0",
     "lucide-react": "^1.66.0",

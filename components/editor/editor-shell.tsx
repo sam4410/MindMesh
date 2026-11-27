@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AiSidebar } from "@/components/editor/ai-sidebar";
 import { DesignContextDialog } from "@/components/editor/design-context-dialog";
 import { EditorNavbar, type ExportAction, type ExportNotice } from "@/components/editor/editor-navbar";
+import { IacDialog } from "@/components/editor/iac-dialog";
 import { ProjectDialogs } from "@/components/editor/project-dialogs";
 import { ProjectSidebar } from "@/components/editor/project-sidebar";
 import { RunPoller } from "@/components/editor/run-poller";
@@ -48,6 +49,8 @@ export function EditorShell({ ownedProjects, sharedProjects, children }: EditorS
   // Bumped on each open so the template filters start from the project's context again.
   const [templatesOpenCount, setTemplatesOpenCount] = useState(0);
   const [isContextOpen, setIsContextOpen] = useState(false);
+  // The infrastructure-as-code dialog (spec 67), opened from the Export menu.
+  const [isIacOpen, setIsIacOpen] = useState(false);
   const [savedContext, setSavedContext] = useState<{ projectId: string; value: DesignContext } | null>(
     null
   );
@@ -203,6 +206,11 @@ export function EditorShell({ ownedProjects, sharedProjects, children }: EditorS
       return;
     }
 
+    if (action === "iac") {
+      setIsIacOpen(true);
+      return;
+    }
+
     if (action === "png" || action === "svg") {
       const exportCanvas = exportImageRef.current;
       if (!exportCanvas) return;
@@ -336,6 +344,17 @@ export function EditorShell({ ownedProjects, sharedProjects, children }: EditorS
             setSavedContext({ projectId: currentProject.id, value });
             setSavedRepository({ projectId: currentProject.id, value: repositoryUrl });
           }}
+        />
+      )}
+      {currentProject && (
+        // Not keyed on open, so a running generation keeps being followed while the dialog is closed.
+        <IacDialog
+          key={`iac-${currentProject.id}`}
+          projectId={currentProject.id}
+          designContext={currentContext}
+          getCanvas={() => canvasRef.current}
+          open={isIacOpen}
+          onOpenChange={setIsIacOpen}
         />
       )}
       {currentProject && (

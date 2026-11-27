@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { EMPTY_DESIGN_CONTEXT, designContextSchema } from "@/lib/design-context";
+import { IAC_FORMATS } from "@/lib/iac-bundle";
 import { NODE_SHAPES } from "@/types/canvas";
 
 // One Liveblocks feed per room for background task activity: design now, spec generation later.
@@ -189,3 +190,30 @@ export const costEstimateSchema = z.object({
 });
 
 export type CostEstimate = z.infer<typeof costEstimateSchema>;
+
+// Infrastructure-as-code generation (spec 66): the review's canvas input plus the format.
+export const iacRequestSchema = reviewRequestSchema.extend({ format: z.enum(IAC_FORMATS) });
+
+// projectId and designContext come from the project the route resolved, as for the review.
+export const iacPayloadSchema = reviewPayloadSchema.extend({ format: z.enum(IAC_FORMATS) });
+
+export type IacPayload = z.infer<typeof iacPayloadSchema>;
+
+// The model's answer, for OpenAI's strict structured output like the others: no optional fields.
+// Paths, sizes and file types are checked afterwards (iacFilesError in lib/iac-bundle.ts).
+export const iacOutputSchema = z.object({
+  files: z.array(
+    z.object({
+      path: z.string().describe('Relative path using "/", e.g. modules/payment_db/main.tf'),
+      content: z.string(),
+    })
+  ),
+  notes: z
+    .array(z.string())
+    .describe('The decision checklist first, one "Decide: ..." entry per configuration value chosen, then other notes'),
+});
+
+export type IacOutput = z.infer<typeof iacOutputSchema>;
+
+// What a finished run hands the browser (spec 67 lists and downloads the bundle).
+export type IacRunOutput = { bundleId: string; notes: string[] };

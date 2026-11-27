@@ -2,6 +2,7 @@ import { LiveblocksError } from "@liveblocks/node";
 import { del, list } from "@vercel/blob";
 
 import { canvasBlobPath } from "@/lib/canvas-snapshot";
+import { iacBlobFolder } from "@/lib/iac-bundle";
 import { getLiveblocks } from "@/lib/liveblocks";
 import { getAccessibleProject, getCurrentIdentity, requireProjectManager } from "@/lib/project-access";
 import { specBlobFolder } from "@/lib/project-spec";
@@ -106,6 +107,17 @@ export async function DELETE(_req: Request, ctx: Context) {
     console.error("Failed to delete version blobs", err);
     return Response.json(
       { error: "Couldn't delete the project's versions. Please try again." },
+      { status: 502 }
+    );
+  }
+
+  try {
+    // Infrastructure code bundles (spec 66); their records cascade away with the project.
+    await deleteBlobFolder(iacBlobFolder(projectId));
+  } catch (err) {
+    console.error("Failed to delete IaC blobs", err);
+    return Response.json(
+      { error: "Couldn't delete the project's infrastructure code. Please try again." },
       { status: 502 }
     );
   }
