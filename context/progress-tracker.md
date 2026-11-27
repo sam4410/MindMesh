@@ -6,7 +6,7 @@ Update this file whenever the current phase, active feature, or implementation s
 - Commercial roadmap, Phase 2 (Segmentation and ease of use). Features 40–43 and 68–71 complete; 34–39 deferred.
 
 ## Current Goal
-- Feature 66: IaC Generation Task
+- None. Every spec through 71 is done except billing and production hardening (34–39), deferred by the user.
 
 ## Completed
 
@@ -1145,16 +1145,143 @@ Update this file whenever the current phase, active feature, or implementation s
     - With the cloud provider set to "Not set", the tab shows the guidance.
   - Follow-up (not done): in the 288 px table, the narrow Service and Tier columns break words mid-word ("Standar d", "Consum ption"), from `break-words` in a fixed-layout table. Wider text columns, or service and tier stacked in one cell, would fix it.
 
+- Feature 66: IaC Generation Task (2026-11-27; implemented and building; production migration applied; no real generation run yet).
+  - Built on Inngest rather than Trigger.dev, as for Feature 64:
+    - `inngest/generate-iac.ts` instead of `trigger/generate-iac.ts`. Function `generate-iac`, on event `ai/iac.requested`, registered in `app/api/inngest/route.ts` (12 functions counting failure handlers) and added to `startTaskRun`'s event types.
+    - `NonRetriableError` stands in for `AbortTaskRunError`.
+    - The run's output, `{ bundleId, notes }` (`IacRunOutput`), takes the place of `metadata.set("bundleId", id)`.
+    - No `POST /api/ai/iac/token`: the browser polls `GET /api/ai/runs/[runId]`.
+  - Billing deferred, per the spec: no usage check, no `IAC` `TaskRunKind` or `add_iac_task_kind` migration, no `iacRunsPerMonth`, no Team-only limit.
+  - Schema: `prisma/models/iac-bundle.prisma`.
+    - `IacFormat` (`TERRAFORM`, `BICEP`).
+    - `IacBundle`: uuid `id`, `projectId` with cascade, `format`, `filePath` (Blob URL), `fileCount`, `createdAt`, and `@@index([projectId, createdAt])`. `Project.iacBundles`.
+    - Migration `20261126193515_add_iac_bundle` adds the enum and the table, nothing else. Applied to local `ghost_ai`, and to production on 2026-11-27 with `prisma migrate deploy` (15 migrations, schema up to date; the new table reads back empty).
+    - Prisma 7's `migrate dev` didn't regenerate the client, so `npx prisma generate` was run by hand.
+    - The running dev server needs a restart before generation works locally (its cached Prisma client has no `iacBundle`).
+  - `fflate` 0.8.3 installed. It has no dependencies, and its `sideEffects: false` keeps it out of browser bundles that only use the format list.
+  - `lib/iac-bundle.ts`, with no server imports so spec 67's dialog can reuse it:
+    - `IAC_FORMATS`, `allowedIacFormats(provider)` (AWS and GCP: Terraform; Azure: Terraform or Bicep; others: none), and `iacFormatError`.
+    - `iacBlobFolder` / `iacBlobPath` (`iac/{projectId}/{bundleId}.zip`).
+    - `iacFilesError`, which rejects:
+      - paths that aren't relative and "/"-separated, where each segment must start with a letter, digit, `_` or `-` (that rules out `..`, `.`, a leading `/`, backslashes, drive letters, spaces and hidden files), and paths over 200 characters;
+      - extensions other than `.tf`, `.tfvars.example`, `.bicep`, `.json`, `.md` (so a real `terraform.tfvars` is refused);
+      - case-insensitive duplicates, no files, more than 40 files, and more than 200 KB in UTF-8 bytes.
+    - `withReadme`: when the model leaves out `README.md`, it adds one with the notes and the review, plan and apply steps. It's added before the limits are checked.
+    - `zipIacFiles` (`fflate.zipSync`).
+  - `lib/iac-bundle-store.ts` `saveIacBundle`, like `saveProjectDocument`:
+    - refuses a project being deleted;
+    - zips into private Blob (`application/zip`, no random suffix);
+    - creates the `IacBundle` row, and deletes the Blob if the row fails.
+  - Task:
+    - Loads the payload from the run row and checks the provider and format again.
+    - Model: OpenAI `gpt-6-luna` with `Output.object` (`iacOutputSchema`: `{ files: { path, content }[], notes: string[] }`), a 240 s timeout under the 300 s step limit, and `retries: 0`.
+    - It validates the files (a failure is a `NonRetriableError` with the specific message, logged by `onFailure`), saves, and logs counts only.
+    - Prompt input: the provider, language and project context; components with `[id]`, name, shape and the managed service named by the `service` ID; boundaries with their members; and edges.
+    - Prompt layout, Terraform: `main.tf` with pinned providers, `variables.tf`, `outputs.tf`, and one module per component under `modules/<name>/`.
+    - Prompt layout, Bicep: `main.bicep` with one module per component at `modules/<name>.bicep`.
+    - Prompt rules:
+      - non-cloud components get no code;
+      - boundaries are used for network isolation and grouping;
+      - edges are used for networking, identities and role assignments;
+      - no secrets, keys, connection strings or subscription, tenant, project or account IDs; placeholders in angle brackets instead, with secret values marked sensitive (`@secure()` in Bicep);
+      - a README covering what's created and how to review, plan and apply.
+  - **Decision checklist (the user's request, 2026-11-27):**
+    - Every configuration value the model picks becomes a variable (a parameter in Bicep) with that default and a description: SKU or tier, size and count, scaling limits, storage, replication and redundancy, backup retention, network exposure and region.
+    - Example values per environment, smaller for dev and production-ready for prod:
+      - Terraform: `environments/dev.tfvars.example` and `environments/prod.tfvars.example`;
+      - Bicep: `environments/dev.parameters.json` and `environments/prod.parameters.json`.
+    - `notes` start with one entry per such value: "Decide: <component> <setting> = <value used>. <what to weigh>". Other notes follow.
+    - The README repeats the list under "Decisions to confirm". Spec 67 shows the run's notes when it finishes.
+  - `POST /api/ai/iac` (`{ roomId, nodes, edges, format }`) mirrors the review route. It returns:
+    - 400 with "Bicep is only available for Azure projects" or "Choose a cloud provider (AWS, Azure or Google Cloud) to generate infrastructure code" before any run starts;
+    - otherwise 202 `{ runId }`.
+  - `DELETE /api/projects/[projectId]` also deletes the Blobs under `iac/{projectId}/`; the rows cascade.
+  - Checked:
+    - TypeScript, ESLint, and `npm run build` (which lists `/api/ai/iac`).
+    - `lib/iac-bundle.test.ts` 4/4: format rules, accepted and unsafe paths, file types, duplicates, the count and UTF-8 size limits, the README fallback, and a zip round trip.
+    - With the earlier self-checks, 10/10 pass.
+    - The local Inngest dev server registers `mindmesh-generate-iac`.
+    - The route, by a one-off script through the real `POST /api/ai/iac`, with stand-ins for Clerk and `startTaskRun` (no events, no model), on six throwaway projects deleted afterwards. 10/10 passed:
+      - Azure Terraform, Azure Bicep, AWS Terraform and GCP Terraform start a run with that format.
+      - Bicep for AWS or GCP, on-prem, cloud-agnostic and unset providers, and an unknown format all get 400 with nothing started.
+  - Storage, the zip's contents and project delete with a bundle present were tested with Feature 67's script (see Feature 67).
+  - First real generation, 2026-11-27, by the user from Feature 67's dialog: Terraform for "Chat Application Design" (Azure).
+    - It completed in about 115 s: a 23-file zip (about 40 KB unzipped, 15 KB zipped), and 28 notes, 24 of them "Decide:".
+    - Reviewed from the zip, which was fetched read-only.
+      - Good:
+        - The README has the 24 decisions, what to weigh for each, explicit caveats (public network access must become private endpoints before PCI data), the review, plan and apply steps, and "not applied by MindMesh". The Chat Client is noted as having no code.
+        - Providers are pinned exactly (azurerm 4.20.0, azuread 3.1.0, random 3.6.2).
+        - Every value is a variable with a description.
+        - The dev and prod examples differ sensibly (Redis Basic and Premium, Postgres B1ms and GP_D2s, backups 7 and 35 days, LRS and ZRS, replicas 1–2 and 2–10).
+        - There are no secrets; passwords are `<placeholders>` marked `sensitive`.
+      - Problems:
+        - **Not valid HCL:** 18 of the 21 `.tf` files use one-line blocks with several arguments separated by semicolons (`variable "x" { type = string; description = "..."; default = "..." }`). HCL has no semicolons, and a one-line block allows only one argument, so `terraform init` would fail.
+        - The prompt asked for 3 files per module, which can't fit 17 components in 40 files. The model put each module in one `main.tf` and said so in the README.
+        - The prod example sets API Management to `Standard_1`, but the code uses VNet injection (`virtual_network_type = "External"`), which only the Developer and Premium tiers support.
+    - Prompt fixes (2026-11-27, in `inngest/generate-iac.ts`):
+      - Terraform modules are one file each (`modules/<name>/main.tf` with their variables, resources and outputs), and components of the same kind may share one.
+      - For Terraform, a rule to format HCL as `terraform fmt` does: one argument per line, no semicolons, one-line blocks with one argument at most.
+      - For both formats, each environment's example values must work with what the code configures (a tier that supports the networking set up).
+    - The Terraform CLI isn't installed on this machine, so `terraform validate` wasn't run, and the spec says not to run it in the app.
+  - Second real generation after the prompt fixes, 2026-11-27, same project and format.
+    - It completed in about 110 s: a 15-file zip, and 40 notes, 37 of them "Decide:".
+    - Every fix took:
+      - No semicolons; the HCL is formatted as `terraform fmt` would (one-line `{ name = ..., value = ... }` entries are list items, which HCL allows).
+      - Nine single-file modules, shared by kind: one Container Apps module for the 7 services, one Blob module for the 2 stores, plus network, API Management, Event Hubs, Redis, Postgres, SQL and Key Vault.
+      - The prod example uses API Management `Premium_1`, which supports the VNet injection the code configures.
+    - Every component is covered. Entra ID is treated as the existing tenant (API Management validates its JWTs) and the Chat Client gets no code; both are said so in the notes.
+    - No secrets: database admin passwords are generated by Terraform, and the README warns that state holds them.
+    - Cosmetic (not fixed): the model labels each non-decision note "Other notes: ...", taking the prompt's wording literally, so the label shows inside the dialog's Notes list.
+  - **Not tested:** Bicep generation, and the code with `terraform validate` (no Terraform CLI here; the spec keeps validation out of the app).
+
+- Feature 67: IaC Download UI (2026-11-27; implemented and building; no real generation from the dialog yet).
+  - Differences from the spec:
+    - Because of the move to Inngest: no token and no `useRealtimeRun`. "Generate" posts to `/api/ai/iac` and follows the run with `RunPoller`, like the Cost and Review tabs.
+    - Billing deferred: no 402 Team-plan message or upgrade link. Failures show "Couldn't start generating. Try again." or "Couldn't generate the code. Try again."
+  - `lib/iac-bundle.ts` `iacFilename`: `{slug or "project"}-{terraform|bicep}-{YYYY-MM-DD}.zip`. The date is UTC, like the spec downloads. Two bundles in the same format on the same day share a name, as the spec's pattern implies.
+  - `GET /api/projects/[projectId]/iac`: `{ bundles: [{ id, format, fileCount, filename, createdAt }] }`, newest first, at most 50, `private, no-store`. Access errors come from `projectAccessError`.
+  - `GET /api/projects/[projectId]/iac/[bundleId]/download`:
+    - It mirrors the spec download route: 401, then `projectAccessError` (403 or 404), then the bundle is looked up within the project (404 otherwise).
+    - It streams the private Blob with `application/zip`, `attachment; filename="..."`, `private, no-store` and `nosniff`.
+  - `components/editor/iac-dialog.tsx`, built on `EditorDialog` (`sm:max-w-lg`), opened by a new "Infrastructure as code…" item (`Boxes` icon) in the Export menu (`ExportAction` "iac"). Like the other items, it's disabled while the canvas is empty.
+    - Without an AWS, Azure or GCP provider, it shows "Set a cloud provider in Design context first" instead of the form. The bundle list stays.
+    - Format select from `allowedIacFormats`: Terraform, plus Bicep for Azure only. If the provider changes, a choice that no longer fits falls back to the first allowed format.
+    - "Generate" shows "Generating…" and "This can take a few minutes. You can close this dialog; generation carries on."
+    - `EditorShell` keeps the dialog mounted (keyed `iac-{projectId}`, not by open), and `RunPoller` sits outside the dialog. The key first duplicated `ShareDialog`'s plain project-ID key; the user saw React's duplicate-key error on 2026-11-27, and the prefix fixed it. So a run is still followed while the dialog is closed, and its notes are there on reopening.
+    - When a run finishes, the list reloads and the notes show:
+      - "Decisions to confirm (n)": the notes starting with "Decide:", prefix removed, with "The code uses these values by default. Confirm or change each one for your needs and for each environment."
+      - Then "Notes": the rest.
+      - The notes area scrolls and is keyboard-focusable.
+    - List rows: icon, filename, format badge, file count, date, and a download link (same pattern as the Specs tab). Loading, error (with "Try again") and empty states.
+    - Fixed note: "Generated code must be reviewed before use. MindMesh never applies it to your cloud."
+  - Checked:
+    - TypeScript, ESLint, and `npm run build` (which lists `/api/projects/[projectId]/iac` and `.../iac/[bundleId]/download`).
+    - `lib/iac-bundle.test.ts` covers `iacFilename`, including the "project" fallback; 10/10 self-checks pass.
+    - A one-off script on two throwaway projects in production, with stand-in Clerk users and no model, saved a real zip with `saveIacBundle`. 12/12 passed:
+      - The private Blob and its row are created.
+      - The list shows the bundle with its filename, `private, no-store`; 403 without access, 401 signed out.
+      - The download returns 200 with all four headers, and the zip unzips to exactly the saved files.
+      - Download refusals: 403 without access, 401 signed out, 404 for another project's bundle ID or an unknown one.
+      - Deleting the project through the real `DELETE` route returns 204 and removes the zip and its row.
+      - Cleanup left 0 projects and 0 blobs.
+  - Tested by the user in the browser, 2026-11-27, after restarting the dev server:
+    - Export menu, then "Infrastructure as code…", opens the dialog with the empty state.
+    - "Generate" shows "Generating…" and the closing note.
+    - When a run finished, the new row showed `chat-application-design-terraform-2026-11-27.zip`, a Terraform badge, "23 files" and the date. Its download button saved the zip to Downloads.
+    - Two Terraform runs completed (see Feature 66).
+  - **Not tested in the browser:** Bicep offered for Azure but not for an AWS project, and the no-provider message. The server rules behind both are tested by script.
+
 ## In Progress
 
-- Features 64 and 65: Cost Estimate Task and UI, tested 2026-11-27 and committed together; pushed to `dev` with Feature 63. Still to do: merge to `main`, then check that Inngest Cloud lists 10 functions for `mindmesh` (resync from the dashboard if it still shows 8).
-- Feature 63: GitHub Repository Link, tested 2026-11-27 (browser and spec run by the user, roles by script), committed (`be3cf72`) and pushed to `dev`; production migration applied. Still to do: merge to `main`.
+- Features 66 and 67: IaC Generation Task and Download UI, tested 2026-11-27 (two real Terraform runs from the dialog, the second after prompt fixes; routes, storage, download and delete by script). Committed together and pushed to `dev`; the `add_iac_bundle` migration was applied to production beforehand. Still to do: merge to `main`, then check that Inngest Cloud lists 12 functions for `mindmesh` (resync if not), and one generation on the live site. Bicep generation is untested.
+- Features 64 and 65: Cost Estimate Task and UI, tested 2026-11-27, committed together (`b8b3440`) and merged to `main` with Feature 63 (PR #18, `70c2ba1`) on 2026-11-27. Inngest Production lists all 10 `mindmesh` functions, including `estimate-cost` on `ai/cost.requested` (checked by the user 2026-11-27; it synced on deploy, no manual resync). Still to do: one estimate on the live site.
+- Feature 63: GitHub Repository Link, tested 2026-11-27 (browser and spec run by the user, roles by script), committed (`be3cf72`) and merged to `main` (PR #18, `70c2ba1`); its migration was applied to production beforehand. Still to do: a check on the live site.
 - Feature 62: Jira Issues from Design, committed (`84e92b0`) and merged to `main` (PR #17, `b47a320`). Still to do: a check on the live site.
 - Inngest move: committed (`d00832f`), merged to `main` (PR #16) and live. Inngest Production synced `mindmesh` at `https://mindmesh-black.vercel.app/api/inngest` with all 8 functions, so the signing key works. Still to do: a design prompt on the live site to confirm the event key (the user's work machine blocks the site, so it waits for another device).
 - Feature 60: Atlassian Connection, tested. A real Atlassian Cloud site (a free Jira site) was connected from the local app on 2026-11-26, with a classic API token; scoped tokens don't work with site URLs, since Atlassian only accepts them through `api.atlassian.com`. The connection was saved to the production database, encrypted with the local `.env.local` key. Connecting on the live site failed with "Couldn't connect. Try again." because `INTEGRATIONS_ENCRYPTION_KEY` isn't set in Vercel, so the route crashed after verifying. The user set it in Vercel (Production and Preview) with the same value as `.env.local` on 2026-11-26; it applies after the next Production deployment.
 
 ## Next Up
-- Feature 66: IaC Generation Task (`context/feature-specs/66-iac-generation-task.md`)
+- No specs left after 67 except billing and production hardening (34–39), deferred by the user. The backlog has the vector SVG export (not specced).
 
 ## Roadmap
 
@@ -1215,8 +1342,8 @@ Billing and production hardening (specs 34–39) are deferred. The user decided 
 ### Phase 5: Cost and infrastructure code
 - 64 Cost estimate task — Complete
 - 65 Cost estimate UI — Complete
-- 66 IaC generation task — Not started
-- 67 IaC download UI — Not started
+- 66 IaC generation task — Complete (Bicep untested)
+- 67 IaC download UI — Complete
 
 ### Backlog (not yet specced)
 - Vector SVG export (added 2026-11-17 at the user's request). Feature 50's SVG comes from `html-to-image`, which wraps the diagram's HTML in a `<foreignObject>`: it displays only in browsers (blank in PowerPoint, as tested; Google Slides takes no SVG; design tools mostly can't edit it) and is large (~1.2 MB for the Payments template against ~250 KB for the PNG). A proper export would draw each node shape, edge path and arrowhead, and label (node, edge and boundary) as native SVG elements from the React Flow nodes and edges, with fonts as plain `font-family` or outlined text. That makes it editable in Figma, Illustrator and Inkscape, importable into PowerPoint and Keynote, and sharp at any print size. Until then the menu item is labelled "SVG (web)". Needs its own spec: shape geometry per `NodeShape`, edge routing to match the canvas, text wrapping, and whether it replaces "SVG (web)" or sits beside it.

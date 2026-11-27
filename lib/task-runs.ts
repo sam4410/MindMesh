@@ -8,6 +8,7 @@ import {
   adrRequested,
   costRequested,
   designRequested,
+  iacRequested,
   inngest,
   reviewRequested,
   specRequested,
@@ -27,7 +28,8 @@ export async function startTaskRun(
     | typeof specRequested
     | typeof adrRequested
     | typeof reviewRequested
-    | typeof costRequested,
+    | typeof costRequested
+    | typeof iacRequested,
   { projectId, userId, input }: { projectId: string; userId: string; input: Prisma.InputJsonValue }
 ) {
   const runId = randomUUID();
