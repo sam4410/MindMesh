@@ -43,6 +43,22 @@ export type CanvasNodeData = {
   // The Jira issue created for this component (spec 62); written by any collaborator, so the
   // badge only links to an https Atlassian issue URL.
   jiraIssue?: { key: string; url: string };
+  // Why the AI added or changed this component (spec 72). Any collaborator can edit node data,
+  // so it's untrusted plain text like the label, checked with readRationale before showing it.
+  rationale?: NodeRationale;
+};
+
+export type NodeRationale = {
+  // At most 500 characters.
+  reason: string;
+  // DesignDecision ids from the same run that list this node.
+  decisionIds: string[];
+  // The label and service when the reason was recorded, to flag later changes.
+  recordedLabel: string;
+  recordedService: string | null;
+  // ISO date.
+  recordedAt: string;
+  runId: string;
 };
 
 export type CanvasNode = Node<CanvasNodeData, "canvasNode">;

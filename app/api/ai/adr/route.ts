@@ -3,8 +3,11 @@ import { z } from "zod";
 import { adrRequested } from "@/inngest/client";
 import { getDesignContext } from "@/lib/design-context";
 import { getAccessibleProject, getCurrentIdentity } from "@/lib/project-access";
+import { prisma } from "@/lib/prisma";
 import { startTaskRun } from "@/lib/task-runs";
 import { specRequestSchema } from "@/types/tasks";
+
+const ADR_MAX_DECISIONS = 30;
 
 // Starts ADR generation (spec 58) for the project behind roomId and records who started it. Same
 // request as POST /api/ai/spec.
@@ -26,6 +29,13 @@ export async function POST(req: Request) {
 
   let runId: string;
   try {
+    // The AI architect's newest decisions (spec 72), so the records keep its actual reasons.
+    const recordedDecisions = await prisma.designDecision.findMany({
+      where: { projectId: project.id },
+      orderBy: { createdAt: "desc" },
+      take: ADR_MAX_DECISIONS,
+      select: { title: true, choice: true, reasons: true, alternatives: true, tradeoffs: true, nodeIds: true },
+    });
     runId = await startTaskRun(adrRequested, {
       projectId: project.id,
       userId: identity.userId,
@@ -37,6 +47,7 @@ export async function POST(req: Request) {
         edges,
         designContext: getDesignContext(project),
         repositoryUrl: project.repositoryUrl,
+        recordedDecisions,
       },
     });
   } catch (err) {

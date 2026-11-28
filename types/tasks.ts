@@ -93,6 +93,20 @@ export const generateSpecPayloadSchema = specRequestSchema.extend({
   designContext: designContextSchema,
   // The project's GitHub repository (spec 63); optional so runs started before it existed still parse.
   repositoryUrl: z.string().max(300).nullable().optional(),
+  // The AI architect's recorded decisions (spec 72), sent only by POST /api/ai/adr; optional so
+  // older runs still parse.
+  recordedDecisions: z
+    .array(
+      z.object({
+        title: z.string(),
+        choice: z.string(),
+        reasons: z.array(z.string()),
+        alternatives: z.array(z.string()),
+        tradeoffs: z.string(),
+        nodeIds: z.array(z.string()),
+      })
+    )
+    .optional(),
 });
 
 export type GenerateSpecPayload = z.infer<typeof generateSpecPayloadSchema>;

@@ -89,5 +89,28 @@ function describeContext(payload: GenerateSpecPayload) {
     ...(summary
       ? ["", `Design context: ${summary}. Weigh each decision and its alternatives against this context.`]
       : []),
+    ...describeRecordedDecisions(payload),
   ].join("\n");
+}
+
+// The decisions the AI architect recorded while designing (spec 72); none for older runs or
+// projects designed by hand, which leaves the prompt as it was.
+function describeRecordedDecisions({ recordedDecisions = [], nodes }: GenerateSpecPayload) {
+  if (recordedDecisions.length === 0) return [];
+  const labels = new Map(nodes.map((node) => [node.id, node.data.label.trim() || `unlabeled ${node.data.shape}`]));
+  const list = (items: string[]) => items.join("; ") || "none recorded";
+  return [
+    "",
+    "Recorded design decisions from the AI architect's design runs, newest first. Base the records on them: keep their reasons and alternatives, and use the newest when runs repeat or revise a decision. Mark any reason that isn't in this log as inferred.",
+    ...recordedDecisions.flatMap((decision, index) => {
+      const components = decision.nodeIds.flatMap((id) => labels.get(id) ?? []);
+      return [
+        `${index + 1}. ${decision.title}: ${decision.choice}`,
+        ...(components.length ? [`   Components: ${components.join(", ")}`] : []),
+        `   Reasons: ${list(decision.reasons)}`,
+        `   Alternatives considered: ${list(decision.alternatives)}`,
+        `   Trade-offs: ${decision.tradeoffs || "none recorded"}`,
+      ];
+    }),
+  ];
 }

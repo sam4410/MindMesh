@@ -23,7 +23,21 @@ export interface FinishedRun {
   isCompleted: boolean;
   isSuccess: boolean;
   // sources: documents the research step used (spec 70); missing for runs without research.
-  output?: { applied: number; skipped: number; sources?: { title: string; url: string }[] };
+  // decisions: the key decisions it recorded (spec 72); missing for runs before them.
+  output?: {
+    applied: number;
+    skipped: number;
+    sources?: { title: string; url: string }[];
+    decisions?: { title: string; choice: string }[];
+  };
+}
+
+// Shown after the summary, before the sources; withSources keeps the whole message within the limit.
+const MAX_CHAT_DECISIONS = 5;
+
+function withDecisions(text: string, decisions: readonly { title: string; choice: string }[] = []) {
+  const lines = decisions.slice(0, MAX_CHAT_DECISIONS).map((decision) => `- ${decision.title}: ${decision.choice}`);
+  return lines.length ? `${text}\n\nKey decisions:\n${lines.join("\n")}` : text;
 }
 
 // Appends "Sources:" with one "- Title (URL)" line each, dropping sources from the end so the
@@ -52,7 +66,7 @@ export function designRunMessage(
         latest?.status === "completed" && latest.text
           ? latest.text
           : `Done. Applied ${applied} ${applied === 1 ? "change" : "changes"} to the canvas.`;
-      return withSources(summary, run.output?.sources);
+      return withSources(withDecisions(summary, run.output?.decisions), run.output?.sources);
     }
     if (latest?.status === "failed" && latest.text) return latest.text;
     return "The design run didn't finish. Any changes made before it stopped are still on the canvas. Try again.";
