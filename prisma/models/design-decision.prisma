@@ -1,0 +1,19 @@
+// A key decision the design agent recorded while designing (spec 72); deleted with the project.
+model DesignDecision {
+  // The uuid the design agent's plan step gave it, so the canvas nodes can link to it.
+  id           String   @id
+  projectId    String
+  project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  runId        String // the design run's TaskRun id
+  title        String
+  choice       String
+  reasons      String[]
+  alternatives String[]
+  tradeoffs    String
+  // Canvas node ids the decision shapes, as they were when it was recorded.
+  nodeIds      String[]
+  sources      Json // { title, url }[] from the run's research
+  createdAt    DateTime @default(now())
+
+  @@index([projectId, createdAt])
+}

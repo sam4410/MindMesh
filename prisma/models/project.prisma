@@ -38,6 +38,7 @@ model Project {
   specs          ProjectSpec[]
   versions       ProjectVersion[]
   iacBundles     IacBundle[]
+  designDecisions DesignDecision[]
 
   @@index([ownerId])
   @@index([organizationId])

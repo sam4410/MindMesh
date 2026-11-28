@@ -35,6 +35,11 @@ const cell = { column: z.number().int(), row: z.number().int() };
 // Nullable, not optional, for OpenAI's strict schema.
 const CLEAR_SERVICE = "clear";
 const service = z.enum([CLEAR_SERVICE, ...CLOUD_SERVICE_IDS]).nullable();
+// Why this component and service (spec 72); stored on the node as its rationale.
+const reason = z
+  .string()
+  .nullable()
+  .describe("why this component and service over the likely alternatives, at most two sentences; null for layout or label-only changes");
 
 // What the model may ask for. Everything it returns is checked again when applied.
 export const designPlanSchema = z.object({
@@ -43,6 +48,20 @@ export const designPlanSchema = z.object({
   plan: z
     .string()
     .describe("Written first: the components and every flow between them, checked against the architecture rules."),
+  // Before the actions, so the model decides before it draws (spec 72). Cut to 8 when saved.
+  decisions: z
+    .array(
+      z.object({
+        title: z.string().describe("the decision, a few words"),
+        choice: z.string().describe("what was chosen, naming the components"),
+        reasons: z.array(z.string()).describe("1 to 3 reasons"),
+        alternatives: z.array(z.string()).describe("0 to 3 alternatives considered"),
+        tradeoffs: z.string().describe("one sentence"),
+        nodeIds: z.array(id).describe("the nodes this decision shapes: your temporary ids for new nodes, canvas ids for existing ones"),
+        sourceUrls: z.array(z.string()).describe("URLs from the research notes' sources only; empty without research"),
+      })
+    )
+    .describe("the 3 to 8 choices that shape the design"),
   summary: z.string().describe("One or two sentences on what was designed or changed."),
   actions: z.array(
     z.union([
@@ -54,6 +73,7 @@ export const designPlanSchema = z.object({
         color,
         service: service.describe('managed cloud service ID; "clear" or null means no service'),
         ...cell,
+        reason,
       }),
       z.object({ type: z.literal("moveNode"), id, ...cell }),
       z.object({ type: z.literal("resizeNode"), id, width: z.number(), height: z.number() }),
@@ -66,6 +86,7 @@ export const designPlanSchema = z.object({
         service: service.describe('managed cloud service ID; null keeps the current service, "clear" removes it'),
         width: z.number().nullable().describe("explicit width for a shape change, or null for the shape default"),
         height: z.number().nullable().describe("explicit height for a shape change, or null for the shape default"),
+        reason,
       }),
       z.object({ type: z.literal("deleteNode"), id }),
       z.object({

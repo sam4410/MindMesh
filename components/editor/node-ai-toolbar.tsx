@@ -1,8 +1,9 @@
 import { NodeToolbar, Position } from "@xyflow/react";
-import { Cloud, Copy, MessageCircle, MessageSquare, Ticket, TrendingUp, type LucideIcon } from "lucide-react";
+import { CircleHelp, Cloud, Copy, MessageCircle, MessageSquare, Ticket, TrendingUp, type LucideIcon } from "lucide-react";
 import { useRef, useState } from "react";
 
 import { NodeComments } from "@/components/editor/node-comments";
+import { NodeRationale } from "@/components/editor/node-rationale";
 import { useAiPromptActions } from "@/hooks/use-ai-chat";
 import type { CanvasNode } from "@/types/canvas";
 
@@ -45,16 +46,20 @@ interface NodeAiToolbarProps {
   onCreateJiraIssues: (nodeIds: string[]) => void;
 }
 
+// The popover open beside a single selected node: its comments or its recorded reason.
+type Panel = { nodeId: string; kind: "comments" | "why" };
+
 // Actions for the selection, below it so it doesn't cover the color toolbar above a single
-// selected node: AI actions (spec 48) about the selected nodes only, Comment (spec 54) for a
-// single node, and Jira issues (spec 62) for the selected components.
+// selected node: AI actions (spec 48) about the selected nodes only, Comment (spec 54) and Why?
+// (spec 72) for a single node, and Jira issues (spec 62) for the selected components.
 export function NodeAiToolbar({ nodes, disabled, onCreateJiraIssues }: NodeAiToolbarProps) {
   const { sendDesignPrompt, openAiPrompt, isDesignBusy } = useAiPromptActions();
-  // The node whose comments are open; they close when the selection changes.
-  const [commentsNodeId, setCommentsNodeId] = useState<string | null>(null);
+  // One popover at a time; it closes when the selection changes.
+  const [panel, setPanel] = useState<Panel | null>(null);
   const commentButtonRef = useRef<HTMLButtonElement>(null);
+  const whyButtonRef = useRef<HTMLButtonElement>(null);
   const singleNode = nodes.length === 1 ? nodes[0] : null;
-  if (commentsNodeId !== null && commentsNodeId !== singleNode?.id) setCommentsNodeId(null);
+  if (panel !== null && panel.nodeId !== singleNode?.id) setPanel(null);
   if (nodes.length === 0) return null;
 
   const ids = nodes.map((node) => node.id);
@@ -71,9 +76,16 @@ export function NodeAiToolbar({ nodes, disabled, onCreateJiraIssues }: NodeAiToo
       ? `Select at most ${MAX_FOCUS_NODES} nodes`
       : undefined;
 
-  function closeComments() {
-    setCommentsNodeId(null);
-    commentButtonRef.current?.focus();
+  function closePanel() {
+    const kind = panel?.kind;
+    setPanel(null);
+    (kind === "why" ? whyButtonRef : commentButtonRef).current?.focus();
+  }
+
+  function togglePanel(kind: Panel["kind"]) {
+    if (!singleNode) return;
+    if (panel?.kind === kind) closePanel();
+    else setPanel({ nodeId: singleNode.id, kind });
   }
 
   return (
@@ -112,17 +124,28 @@ export function NodeAiToolbar({ nodes, disabled, onCreateJiraIssues }: NodeAiToo
         {singleNode && (
           <>
             <span aria-hidden className="mx-0.5 h-4 w-px bg-surface-border" />
-            {/* Not tied to the AI's state: commenting works while a design run is active. */}
+            {/* Not tied to the AI's state: these work while a design run is active. */}
             <button
               ref={commentButtonRef}
               type="button"
               aria-haspopup="dialog"
-              aria-expanded={commentsNodeId === singleNode.id}
-              onClick={() => (commentsNodeId ? closeComments() : setCommentsNodeId(singleNode.id))}
+              aria-expanded={panel?.kind === "comments"}
+              onClick={() => togglePanel("comments")}
               className={BUTTON_CLASS}
             >
               <MessageCircle aria-hidden className="h-3.5 w-3.5" />
               Comment
+            </button>
+            <button
+              ref={whyButtonRef}
+              type="button"
+              aria-haspopup="dialog"
+              aria-expanded={panel?.kind === "why"}
+              onClick={() => togglePanel("why")}
+              className={BUTTON_CLASS}
+            >
+              <CircleHelp aria-hidden className="h-3.5 w-3.5" />
+              Why?
             </button>
           </>
         )}
@@ -143,9 +166,10 @@ export function NodeAiToolbar({ nodes, disabled, onCreateJiraIssues }: NodeAiToo
         )}
       </div>
     </NodeToolbar>
-    {singleNode && commentsNodeId === singleNode.id && (
-      <NodeComments nodeId={singleNode.id} nodeName={labels} onClose={closeComments} />
+    {singleNode && panel?.kind === "comments" && (
+      <NodeComments nodeId={singleNode.id} nodeName={labels} onClose={closePanel} />
     )}
+    {singleNode && panel?.kind === "why" && <NodeRationale node={singleNode} nodeName={labels} onClose={closePanel} />}
     </>
   );
 }

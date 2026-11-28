@@ -6,7 +6,7 @@ Update this file whenever the current phase, active feature, or implementation s
 - Commercial roadmap, Phase 2 (Segmentation and ease of use). Features 40–43 and 68–71 complete; 34–39 deferred.
 
 ## Current Goal
-- None. Every spec through 71 is done except billing and production hardening (34–39), deferred by the user.
+- Feature 72: Design Rationale (`context/feature-specs/72-design-rationale.md`)
 
 ## Completed
 
@@ -1273,7 +1273,18 @@ Update this file whenever the current phase, active feature, or implementation s
 
 ## In Progress
 
-- Features 66 and 67: IaC Generation Task and Download UI, tested 2026-11-27 (two real Terraform runs from the dialog, the second after prompt fixes; routes, storage, download and delete by script). Committed together and pushed to `dev`; the `add_iac_bundle` migration was applied to production beforehand. Still to do: merge to `main`, then check that Inngest Cloud lists 12 functions for `mindmesh` (resync if not), and one generation on the live site. Bicep generation is untested.
+- Feature 72: Design Rationale, implemented and building 2026-11-27, not committed.
+  - Plan schema (`lib/design-actions.ts`): `decisions` (title, choice, reasons, alternatives, trade-offs, node ids, source URLs) sits between `plan` and `summary`, so the model decides before it draws; `addNode` and `updateNodeData` gain `reason` (nullable).
+  - `lib/design-rationale.ts` (no server imports): `nodeRationale`, `decisionIdsFor`, `decisionRecords` (cut to 8 decisions; title 120, choice 300, 3 reasons of 300, 3 alternatives of 120, trade-offs 300, 20 node ids; ids mapped, missing nodes dropped, only this run's https research sources kept) and `readRationale` (zod check before the canvas shows one). `CanvasNodeData.rationale` in `types/canvas.ts`.
+  - Design agent: prompt rules for reasons and decisions; the research sources are listed under the notes so decisions can cite them; the plan step gives each decision a `randomUUID()`. The apply step writes each node's rationale in the same mutation as its change, then saves the decisions with `createMany` (`skipDuplicates`); a failed save is only logged. The run output adds `decisions: { title, choice }[]`.
+  - `DesignDecision` model (`prisma/models/design-decision.prisma`, cascade with the project); migration `20261127124832_add_design_decision`, applied locally only. `GET /api/projects/[projectId]/decisions` (newest 100, `private, no-store`).
+  - UI: "Why?" on the node toolbar for a single node (`components/editor/node-rationale.tsx`; it shares one popover slot with Comment); "Key decisions:" (up to 5) in the design run's chat reply (`designRunMessage`); "Design decisions" button in the Specs tab opening `components/editor/design-decisions-dialog.tsx`.
+  - Decision records: `POST /api/ai/adr` sends the 30 newest decisions as `recordedDecisions` (optional in `generateSpecPayloadSchema`); `generate-adr` lists them only when present, so the prompt is unchanged otherwise.
+  - Checks: `tsc`, eslint on the changed files and `npm run build` pass; `lib/design-rationale.test.ts` (5 tests) and the other self-checks pass; a script against the local database passed 7 checks (empty list, newest-first list with every field, 401 signed out, 403 without access, the ADR run gets the 30 newest decisions, the payload parses with and without them, decisions deleted with the project). The local Inngest dev server lists all 12 functions.
+  - Production migration `20261127124832_add_design_decision` applied 2026-11-28 (user approved); `migrate status` reports the schema up to date.
+  - Browser test 2026-11-28 (throwaway Clerk test user and project, both deleted after; user-approved AI calls): one Azure e-commerce design run with research took 78 s, applied 33 actions, recorded 5 decisions and gave all 15 components a reason linked to existing decisions; decisions kept only this run's https sources. The chat reply listed "Key decisions:" before "Sources:". Why? showed the reason, decision titles and date, moved focus to Close and returned it on Escape; after a rename it showed the changed note; a hand-drawn component showed "No reason recorded"; Comment replaced Why? instead of stacking. The Design decisions dialog showed all 5 with current chip labels; a chip closed it and zoomed to the component; a deleted component's chip read "Removed component" and showed the notice. Generated decision records followed the 5 recorded decisions and kept all 6 recorded alternatives (reworded). Leftover check: 0 projects, 0 decisions.
+  - Test note: Next infers the home folder (C:/Users/ManojSharma, which has a package-lock.json) as the workspace root, so Playwright's console log under the parent folder made the test page rebuild and reload in a loop; the test browser dropped HMR rebuild messages to work around it. No project change.
+- Features 66 and 67: IaC Generation Task and Download UI, tested 2026-11-27 (two real Terraform runs from the dialog, the second after prompt fixes; routes, storage, download and delete by script). Committed together (`ac74cf1`) and merged to `main` (PR #19, `d33a76f`) on 2026-11-27; the `add_iac_bundle` migration was applied to production beforehand. Still to do: check that Inngest Cloud lists 12 functions for `mindmesh` (resync if not), and one generation on the live site. Bicep generation is untested.
 - Features 64 and 65: Cost Estimate Task and UI, tested 2026-11-27, committed together (`b8b3440`) and merged to `main` with Feature 63 (PR #18, `70c2ba1`) on 2026-11-27. Inngest Production lists all 10 `mindmesh` functions, including `estimate-cost` on `ai/cost.requested` (checked by the user 2026-11-27; it synced on deploy, no manual resync). Still to do: one estimate on the live site.
 - Feature 63: GitHub Repository Link, tested 2026-11-27 (browser and spec run by the user, roles by script), committed (`be3cf72`) and merged to `main` (PR #18, `70c2ba1`); its migration was applied to production beforehand. Still to do: a check on the live site.
 - Feature 62: Jira Issues from Design, committed (`84e92b0`) and merged to `main` (PR #17, `b47a320`). Still to do: a check on the live site.
@@ -1281,7 +1292,7 @@ Update this file whenever the current phase, active feature, or implementation s
 - Feature 60: Atlassian Connection, tested. A real Atlassian Cloud site (a free Jira site) was connected from the local app on 2026-11-26, with a classic API token; scoped tokens don't work with site URLs, since Atlassian only accepts them through `api.atlassian.com`. The connection was saved to the production database, encrypted with the local `.env.local` key. Connecting on the live site failed with "Couldn't connect. Try again." because `INTEGRATIONS_ENCRYPTION_KEY` isn't set in Vercel, so the route crashed after verifying. The user set it in Vercel (Production and Preview) with the same value as `.env.local` on 2026-11-26; it applies after the next Production deployment.
 
 ## Next Up
-- No specs left after 67 except billing and production hardening (34–39), deferred by the user. The backlog has the vector SVG export (not specced).
+- Commit and push Feature 72 when asked. Billing and production hardening (34–39) stay deferred.
 
 ## Roadmap
 
@@ -1344,6 +1355,9 @@ Billing and production hardening (specs 34–39) are deferred. The user decided 
 - 65 Cost estimate UI — Complete
 - 66 IaC generation task — Complete (Bicep untested)
 - 67 IaC download UI — Complete
+
+### Phase 6: Trust and explainability (added 2026-11-27)
+- 72 Design rationale (reasons on AI-drawn components, a decision log, reuse in decision records) — Complete (not committed)
 
 ### Backlog (not yet specced)
 - Vector SVG export (added 2026-11-17 at the user's request). Feature 50's SVG comes from `html-to-image`, which wraps the diagram's HTML in a `<foreignObject>`: it displays only in browsers (blank in PowerPoint, as tested; Google Slides takes no SVG; design tools mostly can't edit it) and is large (~1.2 MB for the Payments template against ~250 KB for the PNG). A proper export would draw each node shape, edge path and arrowhead, and label (node, edge and boundary) as native SVG elements from the React Flow nodes and edges, with fonts as plain `font-family` or outlined text. That makes it editable in Figma, Illustrator and Inkscape, importable into PowerPoint and Keynote, and sharp at any print size. Until then the menu item is labelled "SVG (web)". Needs its own spec: shape geometry per `NodeShape`, edge routing to match the canvas, text wrapping, and whether it replaces "SVG (web)" or sits beside it.

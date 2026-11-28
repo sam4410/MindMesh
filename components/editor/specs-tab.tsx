@@ -1,10 +1,11 @@
 "use client";
 
-import { CheckCircle2, Download, ExternalLink, FileText, ListChecks, Loader2, Send, Sparkles } from "lucide-react";
+import { CheckCircle2, Download, ExternalLink, FileText, Lightbulb, ListChecks, Loader2, Send, Sparkles } from "lucide-react";
 import { createElement, useEffect, useState, type FormEvent } from "react";
 import Markdown, { type Components, type ExtraProps } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
+import { DesignDecisionsDialog } from "@/components/editor/design-decisions-dialog";
 import { EditorDialog } from "@/components/editor/editor-dialog";
 import { RunPoller } from "@/components/editor/run-poller";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -101,6 +102,8 @@ export function SpecsTab({ projectId, isActive, chatMessages, getCanvas }: Specs
   const [guardNotice, setGuardNotice] = useState<string | null>(null);
   // Which button was used last, so its run's notice is the one shown.
   const [lastKind, setLastKind] = useState<SpecKind>("SPEC");
+  // The decision log the AI architect recorded (spec 72).
+  const [isDecisionsOpen, setIsDecisionsOpen] = useState(false);
   // A finished run reloads the list.
   const reload = () => setAttempt((n) => n + 1);
   const specRun = useDocumentRun({
@@ -208,6 +211,15 @@ export function SpecsTab({ projectId, isActive, chatMessages, getCanvas }: Specs
         >
           {adrRun.isRunning ? <Loader2 className="animate-spin" /> : <ListChecks />}
           {adrRun.isRunning ? "Generating decision records…" : "Generate decision records"}
+        </Button>
+        <Button
+          variant="ghost"
+          aria-haspopup="dialog"
+          onClick={() => setIsDecisionsOpen(true)}
+          className="w-full rounded-xl text-copy-secondary"
+        >
+          <Lightbulb />
+          Design decisions
         </Button>
         {notice && (
           <p role="status" className="text-xs text-copy-muted">
@@ -320,6 +332,9 @@ export function SpecsTab({ projectId, isActive, chatMessages, getCanvas }: Specs
         )}
       </ScrollArea>
 
+      {isDecisionsOpen && (
+        <DesignDecisionsDialog projectId={projectId} getCanvas={getCanvas} onClose={() => setIsDecisionsOpen(false)} />
+      )}
       {selected && (
         <SpecPreviewDialog
           key={selected.id}
